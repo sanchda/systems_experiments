@@ -9,6 +9,7 @@
 
 // Use like
 // gcc -DUSE_REAL itimer_rate.c && ./a.out 1000
+// sudo perf trace -e signal:* ./a.out 1000
 
 double count = 0.0;
 void handler(int s) {
@@ -42,5 +43,6 @@ int main(int c, char** v) {
     for(int i = 0; i < 1e3; i++);
 
   signal(SIGPROF, SIG_IGN);
+  printf("usec per jiffy; %f\n", 1000000.0/HZ);
   printf("Saw %d hits, or %f cycles/hit\n", (int)count, (t2-t1)/count);
 }
