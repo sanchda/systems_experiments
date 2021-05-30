@@ -7,7 +7,9 @@
 #include <time.h>
 #include <x86intrin.h>
 
-// SIGPROF handler to update the histogram
+// Use like
+// gcc -DUSE_REAL itimer_rate.c && ./a.out 1000
+
 double count = 0.0;
 void handler(int s) {
   (void)s;
@@ -19,75 +21,20 @@ int main(int c, char** v) {
   suseconds_t usecs = 1000*100;
   if (c > 1)
     usecs = atoll(v[1]);
+  signal(SIGPROF, handler);
+  signal(SIGALRM, handler);
+  signal(SIGVTALRM, handler);
 
   struct itimerval old;
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
-  signal(SIGPROF, handler);
+#if defined(USE_REAL)
+  setitimer(ITIMER_REAL, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
+#elif defined(USE_VIRT)
+  setitimer(ITIMER_VIRTUAL, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
+#elif defined(USE_PROF)
+  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
+#else
+  setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0, usecs}, .it_value = {0, usecs}}, &old);
+#endif
   u_int64_t t1 = T();
   u_int64_t t2 = T();
   u_int64_t cycles = 1e10;
