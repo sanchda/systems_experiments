@@ -29,7 +29,6 @@ void print_stats() {
 }
 
 #define NUM_THREADS 10000
-#define INSTRUCTIONS "`grep -i rss /proc/%d/status`"
 int main() {
   printf("Doing a run and joining %d threads\n", NUM_THREADS);
   pthread_t tids[NUM_THREADS] = {0};
