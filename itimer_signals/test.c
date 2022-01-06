@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <sys/time.h>
+#include <time.h>
 
 #define NUM_THREADS 10
 long histogram[NUM_THREADS+1] = {0};  // Where to store signal-hits
@@ -61,12 +62,17 @@ int main(int c, char** v) {
     break;
   }
 
+#define USE_TC
+  struct sigevent sev = (struct sigevent){.sigev_notify = SIGEV_SIGNAL, .sigev_signo = SIG, .sigev_value = (union sigval){.sival_ptr = &tmid}}
+
+#else
   struct itimerval old;
   setitimer(ITIMER_PROF, &(struct itimerval){.it_interval = {0,1000*100},
                                              .it_value = {1,0}}, &old);
   signal(SIGPROF, handler);
   usleep(1000*1000*100);
   setitimer(ITIMER_PROF, &old, NULL);
+#endif
 
   printf("Printing histogram.  Note ID=0 is the parent.\n");
   for (int i=0; i<NUM_THREADS; i++) {
