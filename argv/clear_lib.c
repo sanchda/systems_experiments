@@ -8,20 +8,20 @@
 extern char** environ;
 void scrub_args() {
   // The trick here is that we can get the user environment
-  // through a global, and the args are just before it.  We
-  // check procfs to determine the number of args, then
-  // backtrack, replacing the elements
+  // through a global, and the args are just before it.
   char **args = environ;
-  char buf[1024] = {0};
-  int fd = open("/proc/self/cmdline", O_RDONLY);
-  int n = 0;
   int argc = 0;
-  while (0 < (n=read(fd, buf, sizeof(buf))))
-    for (;n;n--)
-      if (!buf[n]) argc++;
+
+  // Find argc.  It's only sort of argc, since we're off by one, but whatever.
+  // This limit is actually higher
+  for (int i = 2; i < 25; i++) {
+    if (i - 2 == (unsigned int)args[-i]) {
+      argc = i - 1;
+      break;
+    }
+  }
   for(;argc > 1;argc--)
     memset(args[-argc], '?', strlen(args[-argc]));
-  close(fd);
 }
 
 void read_cmdline() {
