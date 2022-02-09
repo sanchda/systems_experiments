@@ -6,16 +6,11 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-void helperfun() {
-  static __thread char a = 0;
-}
+void helperfun() { static __thread char a = 0; }
 
-void *worker(void *arg) {
-  helperfun();
-}
+void *worker(void *arg) { helperfun(); }
 
-void *lazy(void *arg) {
-}
+void *lazy(void *arg) { }
 
 void print_stats() {
   usleep(10000);

@@ -23,20 +23,20 @@ void read_cmdline() {
 }
 
 int main(int n, char** v) {
-  printf("Reading my commandline.\n");
+  printf("Reading my commandline from /proc/self/cmdline.\n");
   read_cmdline();
 
   // Anonymize args, then print them.
   for (int i = 0; i < n; i++)
     for (int j = strlen(v[i]); j; j--)
       v[i][j-1] = '*';
-  printf("Printing my argv:\n");
+  printf("I scrubbed my argv.  I'll read the sanitized output for you.\n");
   for (int i = 0; i < n; i++)
     printf("%s ", v[i]);
   printf("\n");
 
   // Print the commandline again to see if the kernel-detected strategy works
-  printf("Printing my commandline again.\n");
+  printf("I'm going to read my commandline from procfs again.\n");
   read_cmdline();
   return 0;
 }
