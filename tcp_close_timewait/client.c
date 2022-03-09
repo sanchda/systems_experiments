@@ -13,6 +13,14 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
+#ifdef __APPLE__
+#  define MSG_NOSIGNAL 0
+#elif __linux__
+#  define SO_NOSIGPIPE 0
+#else
+#  error lol wrong os
+#endif
+
 int main(int argc, char** argv) {
   int port = -1;
   int clos = 0;
@@ -30,7 +38,7 @@ int main(int argc, char** argv) {
 
   while(1) {
     if (fd == -1) {
-      if(-1 == (fd = socket(AF_INET, SOCK_STREAM, 0)) ||
+      if(-1 == (fd = socket(AF_INET, SOCK_STREAM, SO_NOSIGPIPE)) ||
          -1 == connect(fd, (const struct sockaddr *)&sa, sizeof(sa))) {
         return printf("Couldn't connect on port %d\n", port), -1;
       }

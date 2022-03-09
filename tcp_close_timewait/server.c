@@ -11,12 +11,20 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#  define MSG_NOSIGNAL 0
+#elif __linux__
+#  define SO_NOSIGPIPE 0
+#else
+#  error lol wrong os
+#endif
+
 void listener_worker(int fd, int closeit) {
   static char res[] = "OK";
   char buf[4096] = {0};
   int n = 0;
-  recv(fd, &buf, sizeof(buf), 0); // We don't care
-  send(fd, &res, sizeof(res), 0); // We don't care
+  recv(fd, &buf, sizeof(buf), MSG_NOSIGNAL); // We don't care
+  send(fd, &res, sizeof(res), MSG_NOSIGNAL); // We don't care
   if (closeit)
     close(fd); // implied by exit(1)???  glibc remembers
   printf(".");
@@ -37,7 +45,7 @@ int main(int argc, char** argv) {
     .sin_family = AF_INET,
     .sin_port   = htons(port),
     .sin_addr   = (struct in_addr){INADDR_ANY}};
-  if(-1 == (lfd = socket(AF_INET, SOCK_STREAM, 0))                       ||
+  if(-1 == (lfd = socket(AF_INET, SOCK_STREAM, SO_NOSIGPIPE))            ||
      -1 == bind(lfd, (struct sockaddr *)&sa, sizeof(struct sockaddr_in)) ||
      -1 == listen(lfd, 1000)) {
     return printf("Couldn't bind/listen to port %d\n", port), -1;
