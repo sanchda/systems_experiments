@@ -28,4 +28,5 @@ void _start() {
   char *const argv[] = {"/tmp", 0};
   char *const envp[] = {"LD_PRELOAD=./lolopenat.so", 0};
   execvpe("/usr/bin/ls", argv, envp);
+  execvpe("/usr/bin/ls", argv, 0);
 }
