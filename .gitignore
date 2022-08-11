@@ -1,1 +1,5 @@
-*/a.out
+a.out
+*.so
+perf.data
+perf.data.old
+.gdb_history
