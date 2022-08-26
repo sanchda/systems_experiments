@@ -1,3 +1,5 @@
 # gcc12_type_deduction
 
-Here's a case where type deduction for find() appears to be broken.  Or something.
+gcc-12 is more strict about requiring `<algorithm>` for a certain case of `find()`.
+
+The error message isn't very helpful, since it's hard to tell a user why they are wrong.

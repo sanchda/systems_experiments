@@ -1,12 +1,14 @@
 #include <array>
+//#include <algorithm> // put this back to fix it
 #include <vector>
 #include <iostream>
 
 using namespace std::literals;
 
 int main() {
-  static constexpr std::array lu{"one"sv, "two"sv, "three"sv}; // hint: static constexpr doesn't matter for the issue we're looking at 
-  const std::basic_string_view<char> &val = "two";
+//  static constexpr std::array lu{"one"sv, "two"sv, "three"sv};
+  std::array<std::string, 3> lu{"one", "two", "three"};
+  std::string val{"two"};
   if (std::find(lu.begin(), lu.end(), val) != lu.end())
     std::cout << "Found it!" << std::endl;
   else
