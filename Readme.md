@@ -1,1 +1,4 @@
-A repository for random systems experiments
+Systems Experiments
+===
+Staring at frightening things may bring courage.
+But never safety.
