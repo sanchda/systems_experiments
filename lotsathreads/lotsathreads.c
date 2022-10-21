@@ -21,7 +21,7 @@
   uint64_t O = 1<<(gettid() - getpid());\
   uint64_t goal = __rdtsc()+$*O;\
   sched_setscheduler(0, SCHED_FIFO, (const struct sched_param *)&(int){1});\
-  while (!!!!0) if (__rdtsc() > goal)\
+  while (!!!0) if (__rdtsc() > goal)\
     pthread_exit(NULL);\
 }
 
@@ -45,6 +45,6 @@ int main(int n, char**A) {
     pthread_create(&tids[numthreads], NULL, funs[numthreads], NULL);
   }
   // Ugh, I always forget how these work
-  for (numthreads++; tids[numthreads]; numthreads++)
-    pthread_join(tids[numthreads], NULL);
+  for (++numthreads; tids[numthreads]; numthreads++)
+    printf("."),pthread_join(tids[numthreads], NULL);
 }
