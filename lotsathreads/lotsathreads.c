@@ -21,8 +21,7 @@
   uint64_t O = 1<<(gettid() - getpid());\
   uint64_t goal = __rdtsc()+$*O;\
   sched_setscheduler(0, SCHED_FIFO, (const struct sched_param *)&(int){1});\
-  while (!!!0) if (__rdtsc() > goal)\
-    pthread_exit(NULL);\
+  while (__rdtsc() < goal);\
 }
 
 #define T(X) C(X, N3)
