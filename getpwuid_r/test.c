@@ -46,12 +46,10 @@ bool uid_from_user(const char *user, uid_t *id) {
 
 const char* user_from_uid(uid_t id) {
   int stashed_errno;
-  struct passwd pwd;
-  struct passwd *result;
+  struct passwd pwd, *result;
   char buf[4096] = {0}; memset(buf, 0, sizeof(buf));
-  size_t buf_sz = sizeof(buf);
 
-  getpwuid_r(id, &pwd, buf, buf_sz, &result);
+  getpwuid_r(id, &pwd, buf, sizeof(buf), &result);
   stashed_errno = errno;
   if (!result) {
     // getpwuid_r puts NULL into `result` on error
