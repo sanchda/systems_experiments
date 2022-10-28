@@ -1,7 +1,11 @@
+#include <ctype.h> // isdigit
 #include <errno.h>
+#include <dirent.h> // opendir, readdir
+#include <fcntl.h> // open
 #include <stdbool.h>
 #include <stdlib.h> //
 #include <string.h> // memset
+#include <sys/stat.h> // open
 #include <sys/types.h>
 #include <pwd.h> //getpwnam_r, getpwuid_r
 #include <unistd.h>
@@ -81,7 +85,9 @@ void write_number(long num) {
 void process_argument(const char *str) {
   uid_t uid = 0;
   const char *user = NULL;
-  if (is_number(str)) {
+  if (!str || !*str) {
+    return; // Nothing to do here
+  } else if (is_number(str)) {
     uid = strtol(str, NULL, 10);
     const char msg[] = "Running test on UID: ";
     write(1, msg, sizeof(msg));
@@ -121,19 +127,80 @@ void process_argument(const char *str) {
   }
 }
 
-int main(int n, char **V) {
-  if (n == 1) {
-    const char msg[] = "You've got to give me something to work with here.\n";
-    write(1, msg, sizeof(msg));
-    return -1;
+char *procpath_from_pid(const char *pid) {
+  static char path[sizeof("/proc//stat") + sizeof("32768")];
+  size_t sz = 0, x = 0;
+  memset(path, ' ', sizeof(path));
+  memcpy(path + sz, "/proc/",  x=sizeof("/proc/"));   sz+=x-1;
+  memcpy(path + sz, pid,       x=strlen(pid));        sz+=x;
+  memcpy(path + sz, "/status", sizeof("/status"));
+  return path;
+}
+
+char *uid_from_pid(const char *pid) {
+  // Strong assumption here that the status fits in a page.
+  int fd = open(procpath_from_pid(pid), O_RDONLY);
+  char _buf[4096] = {0}; char *buf = _buf;
+  static char uid[sizeof("18446744073709551616")] = {0};
+  memset(uid, 0, sizeof(uid));
+  if (-1 == fd)
+    return NULL;
+
+  size_t sz = read(fd, buf, sizeof(_buf));
+  if (sz <= 0) {
+    close(fd); // Not sure what to do here
+    return NULL;
   }
 
+  // Do it stupidly
+  size_t n = 0;
+  while (n++ < sz + 5 && (buf[0] != 'U' || buf[1] != 'i' || buf[2] != 'd'))
+    buf++;
+  if (n >= sz + 5) {
+    close(fd);
+    return NULL;
+  }
+
+  // If we're here, `buf` points at the top of the UID line
+  while (!isdigit(*buf)) buf++;
+  char *p = buf;
+  while (isdigit(*p)) p++;
+  memcpy(uid, buf, p-buf);
+  close(fd);
+  return uid;
+}
+
+void poll_proc() {
+  DIR *proc = opendir("/proc");
+  struct dirent *entry;
+
+  if (!proc) {
+    const char msg[] = "Couldn't open /proc\n";
+    write(1, msg, sizeof(msg));
+    return;
+  }
+
+  while ((entry = readdir(proc))) {
+    if (entry->d_type == DT_DIR && isdigit(*entry->d_name))
+      process_argument(uid_from_pid(entry->d_name));
+  }
+  closedir(proc);
+}
+
+int main(int n, char **V) {
+  if (n == 1) {
+    while(true)
+      poll_proc();
+  } else {
+    int i = 0;
+    n--;
+    V++;
+    while (true)
+      process_argument(V[i++ % n]);
+  }
+
+
   // Loop over the input arguments over and over
-  int i = 0;
-  n--;
-  V++;
-  while (true)
-    process_argument(V[i++ % n]);
 
   return 0;
 }
