@@ -75,7 +75,7 @@ void write_number(long num) {
     buf[sz--] = '0' + (num % 10);
     num /= 10;
   }
-  write(STDOUT_FILENO, &buf[sz], sizeof(buf)-sz);
+  write(1, &buf[sz], sizeof(buf)-sz);
 }
 
 void process_argument(const char *str) {
