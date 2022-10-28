@@ -10,25 +10,21 @@
 #include <pwd.h> //getpwnam_r, getpwuid_r
 #include <unistd.h>
 
-
-#define LOG(x)                                                    \
-{                                                                 \
+#define LOG(x) {                                                  \
   if (__builtin_types_compatible_p(typeof(x), typeof(&(x)[0])))   \
     write(1, (x), sizeof(x));                                     \
   else                                                            \
     write(1, (x), strlen(x));                                     \
 }
 
-#define BUF_SZ 4096
 bool uid_from_user(const char *user, uid_t *id) {
   int stashed_errno;
   if (!user || !*user)
     return false;
 
-  struct passwd pwd;
-  struct passwd *result;
-  char buf[BUF_SZ] = {0}; memset(buf, 0, BUF_SZ);
-  size_t buf_sz = BUF_SZ;
+  struct passwd pwd, *result;
+  char buf[4096] = {0}; memset(buf, 0, sizeof(buf));
+  size_t buf_sz = sizeof(buf);
 
   getpwnam_r(user, &pwd, buf, buf_sz, &result);
   stashed_errno = errno;
@@ -79,7 +75,7 @@ bool is_number(const char *str) {
 
 void write_number(long num) {
   char buf[sizeof("18446744073709551616")]; // biggest uint64_t
-  memset(buf, '\0', sizeof(buf));
+  memset(buf, 0, sizeof(buf));
   size_t sz = sizeof(buf) - 1;
   if (num == 0)
     buf[sz--] = '0';
@@ -187,7 +183,6 @@ void poll_proc() {
     LOG(msg);
     return;
   }
-
   while ((entry = readdir(proc))) {
     if (entry->d_type == DT_DIR && isdigit(*entry->d_name))
       process_argument(uid_from_pid(entry->d_name));
@@ -196,19 +191,8 @@ void poll_proc() {
 }
 
 int main(int n, char **V) {
-  if (n == 1) {
-    while(true)
-      poll_proc();
-  } else {
-    int i = 0;
-    n--;
-    V++;
-    while (true)
-      process_argument(V[i++ % n]);
-  }
-
-
-  // Loop over the input arguments over and over
-
+  int i = 0; n--; V++; // ignore process name :)
+  while (true)
+    (!n) ? poll_proc() : process_argument(V[i++ % n]);
   return 0;
 }
