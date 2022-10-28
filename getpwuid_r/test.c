@@ -31,8 +31,7 @@ bool uid_from_user(const char *user, uid_t *id) {
   if (!result) {
     // getpwnam_r puts NULL into `result` on error
     // Print the error without allocations
-    const char msg[] = "`getpwnam_r()` failed.  Printing errno: ";
-    LOG(msg);
+    LOG("`getpwnam_r()` failed.  Printing errno: ");
     LOG(strerror(stashed_errno));
     LOG("\n");
     *id = -1;
@@ -40,8 +39,7 @@ bool uid_from_user(const char *user, uid_t *id) {
   }
 
   // If we're here, we succeeded in getting a result
-  const char msg[] = "Successfully got user ID\n";
-  LOG(msg);
+  LOG("Successfully got user ID\n");
   *id = pwd.pw_uid;
   return true;
 }
@@ -50,16 +48,15 @@ const char* user_from_uid(uid_t id) {
   int stashed_errno;
   struct passwd pwd;
   struct passwd *result;
-  char buf[BUF_SZ] = {0}; memset(buf, 0, BUF_SZ);
-  size_t buf_sz = BUF_SZ;
+  char buf[4096] = {0}; memset(buf, 0, sizeof(buf));
+  size_t buf_sz = sizeof(buf);
 
   getpwuid_r(id, &pwd, buf, buf_sz, &result);
   stashed_errno = errno;
   if (!result) {
     // getpwuid_r puts NULL into `result` on error
     // Print the error without allocations
-    const char msg[] = "`getpwuid_r()` failed.  Printing errno: ";
-    LOG(msg);
+    LOG("`getpwuid_r()` failed.  Printing errno: ");
     LOG(strerror(stashed_errno));
     LOG("\n");
     return NULL;
@@ -93,38 +90,30 @@ void process_argument(const char *str) {
     return; // Nothing to do here
   } else if (is_number(str)) {
     uid = strtol(str, NULL, 10);
-    const char msg[] = "Running test on UID: ";
-    LOG(msg);
+    LOG("Running test on UID: ");
     write_number(uid);
     LOG("\n");
     if (!(user = user_from_uid(uid))) {
-      const char msg[] = "Failed to get user\n";
-      LOG(msg);
+      LOG("Failed to get user\n");
       return;
     } else {
-      const char pre_msg[] = "Got user: `";
-      const char post_msg[] = "`\n";
-      LOG(pre_msg);
+      LOG("Got user: `");
       LOG(user);
-      LOG(post_msg);
+      LOG("`\n");
     }
   } else {
     user = str;
-    const char pre_msg[] = "Running test on user `";
-    const char post_msg[] = "`\n";
-    LOG(pre_msg);
+    LOG("Running test on user `");
     LOG(user);
-    LOG(post_msg);
+    LOG("`\n");
 
     // Call getpwuid_r from a wrapper, so we can ensure transient stack storage
     //for temporaries.
     if (!uid_from_user(user, &uid)) {
-      const char msg[] = "Failed to get UID\n";
-      LOG(msg);
+      LOG("Failed to get UID\n");
       return;
     } else {
-      const char msg[] = "Got UID: ";
-      LOG(msg);
+      LOG("Got UID: ");
       write_number(uid);
       LOG("\n");
     }
@@ -179,8 +168,7 @@ void poll_proc() {
   struct dirent *entry;
 
   if (!proc) {
-    const char msg[] = "Couldn't open /proc\n";
-    LOG(msg);
+    LOG("Couldn't open /proc\n");
     return;
   }
   while ((entry = readdir(proc))) {
