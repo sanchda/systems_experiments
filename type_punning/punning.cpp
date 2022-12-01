@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include <cstring>
 #include <tuple>
 #include <array>
 #include <string>
@@ -68,28 +69,89 @@ constexpr ControlMask init_mask() {
   return mask;
 }
 
-int count_hits(const std::string &str) {
-  static ControlLookup lu = init_lookup();
-  constexpr ControlMask mask = init_mask();
+constexpr ControlMask mask = init_mask();
+ControlLookup lu = init_lookup();
+int count_hits(const std::string &str_) {
 
-  // str already assumed > 15 
   int hits = 0;
-  const char* ptr = str.c_str();
-  for (size_t i = 0; i < str.size() - 15; ++i) {
-    auto match = *reinterpret_cast<const unsigned long *>(ptr + i);
-    for (size_t j = 0; j < lu.size(); ++j) {
-      if ((match & mask[std::get<1>(lu[j])]) == std::get<0>(lu[j]))
-        hits++;
+  const char *str = str_.c_str();
+  const char *end = str_.c_str() + str_.size() - 15;
+  while (str < end) {
+    switch (*str) {
+    case '$':
+      {
+        auto match = *reinterpret_cast<const unsigned long *>(str);
+        for (size_t j = 0; j < lu.size(); ++j) {
+          if ((match & mask[std::get<1>(lu[j])]) == std::get<0>(lu[j])) {
+            hits++;
+            str += std::get<1>(lu[j]) - 1;
+            break;
+          }
+        }
+        str++;
+      }
+      break;
+    default:
+      str++;
     }
   }
   return hits;
 }
 
-int main() {
-  std::string test = "this is a long string with $SP$ all over and $BP$ and also $u7e$::h123456789abcdef";
+int count_hits_bad(const std::string &str_) {
+  constexpr ControlCodes lu = init_lookup_pre();
+  int hits = 0;
+  const char *str = str_.c_str();
+  const char *end = str_.c_str() + str_.size() - 15;
+  while (str < end) {
+    switch (*str) {
+    case '$':
+      if (!strncmp(str, "$SP$", 4) ||
+          !strncmp(str, "$BP$", 4) ||
+          !strncmp(str, "$RF$", 4) ||
+          !strncmp(str, "$LT$", 4) ||
+          !strncmp(str, "$GT$", 4) ||
+          !strncmp(str, "$LP$", 4) ||
+          !strncmp(str, "$RP$", 4)) {
+          hits++;
+          str += 4;
+      } else if (!strncmp(str, "$u20$", 5) ||
+                 !strncmp(str, "$u27$", 5) ||
+                 !strncmp(str, "$u5b$", 5) ||
+                 !strncmp(str, "$u5d$", 5) ||
+                 !strncmp(str, "$u7b$", 5) ||
+                 !strncmp(str, "$u7d$", 5) ||
+                 !strncmp(str, "$u7e$", 5)) {
+        hits++;
+        str += 4;
+      } else {
+        str++;
+      }
+      break;
+    default:
+      str++;
+    }
+  }
+  return hits;
+}
 
-  for (size_t i = 0; i < 10e6; i++)
-    count_hits(test);
+int main(int c, char **V) {
+  std::string test = "this is a long string with $SP$ all over and $BP$ and also $u7e$::h123456789abcdef";
+  size_t iter = 1e9;
+
+  if (c > 1 && *V[1] == 'A') {
+    printf("Fast\n");
+    for (size_t i = 0; i < iter; i++) {
+      __asm__ __volatile__("");
+      count_hits(test);
+    }
+  } else {
+    printf("Slow\n");
+    for (size_t i = 0; i < iter; i++) {
+      __asm__ __volatile__("");
+      count_hits_bad(test);
+    }
+  }
 
   return 0;
 }
