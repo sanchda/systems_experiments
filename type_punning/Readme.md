@@ -1,3 +1,5 @@
 # type_punning
 
-Some joke could go here.
+You _could_ do this, but probably don't.
+
+Also this isn't faster.
