@@ -9,8 +9,7 @@
 #include <unistd.h>
 
 #define SZ (1024*4096) // 4 megs
-#define I_SZ (SZ - sizeof(size_t))
-#define ITER (1e2)
+#define ITER (1e3)
 
 // Silly time
 #if defined(__x86_64__)
@@ -30,42 +29,52 @@ inline uint64_t tick_impl() {
 void print(const char* msg1, const char* msg2, double num) {
   if (!msg1 || !msg2 || !*msg1 || !*msg2)
     return;
-  printf("%s%s%*.3f\n",msg1, msg2, 11, num);
+  printf("%s%s%+*lld\n",msg1, msg2, 3, (long long)(num*100) - 100);
 }
 
-double r_baseline[3] = {0};
+double i_baseline[3] = {0};
+double m_baseline[3] = {0};
 double w_baseline[3] = {0};
 typedef enum TYPES{COW, PRIVATE}TYPES;
 
 void do_work(const char* msg, unsigned char *buf, int type) {
-  // Do linear read
+  // Do non-mutating linear read
   long long unsigned start_time = tick();
-  volatile size_t *accum = (size_t*)buf; // use same storage for accumulation
-  buf += sizeof(size_t);
-  for (size_t i = 0; i < I_SZ; i++) {
-    buf[i] = (unsigned char)i;
-  }
+  volatile size_t *accum = &(size_t){0};
   for (int i = 0; i < ITER; i++) {
-    for (size_t j = 0; j < I_SZ; j++) {
+    for (size_t j = 0; j < SZ; j++) {
       *accum += buf[j];
     }
   }
-  uint64_t ticks = tick() - start_time;
-  if (!r_baseline[type])
-    r_baseline[type] = ticks;
-  print(msg, "read,  ", ticks / r_baseline[type]);
+  uint64_t ticks_i = tick() - start_time;
+  if (!i_baseline[type])
+    i_baseline[type] = ticks_i;
 
   // Do linear writes
   start_time = tick();
-  for (int i = 0; i < ITER; i++) {
-    for (size_t j = 0; j < I_SZ; j++) {
-      buf[j] = *accum;
-    }
-  }
-  ticks = tick() - start_time;
+  for (int i = 0; i < ITER; i++)
+    for (size_t j = 0; j < SZ; j++)
+      buf[j] = i*j;
+  uint64_t ticks_w = tick() - start_time;
   if (!w_baseline[type])
-    w_baseline[type] = ticks;
-  print(msg, "write, ",ticks / w_baseline[type]);
+    w_baseline[type] = ticks_w;
+
+  // Do reads again, now that we've written/copied all the pages
+  for (int i = 0; i < ITER; i++)
+    for (size_t j = 0; j < SZ; j++)
+      *accum += buf[j];
+  uint64_t ticks_m = tick() - start_time;
+  if (!m_baseline[type])
+    m_baseline[type] = ticks_m;
+
+
+  print(msg, "i-read,  ", ticks_i / i_baseline[type]);
+  print(msg, "m-read,  ", ticks_m / m_baseline[type]);
+  print(msg, "write,   ", ticks_w / w_baseline[type]);
+}
+
+void print_header() {
+  printf("NAME,   MEMORY,  TYPE,    PERCENT CHANGE\n");
 }
 
 int main() {
@@ -76,6 +85,7 @@ int main() {
   // Setup simple coordination using GCC intrinsics
   unsigned long *sem = mmap(0, sizeof(*sem), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
   *sem = 0;
+  print_header();
 
   // Do work in the parent process
   do_work("parent, cow,     ", cow_region, COW);
