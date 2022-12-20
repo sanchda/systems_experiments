@@ -1,4 +1,4 @@
-#include <pthread.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -17,11 +17,12 @@
 #include <x86intrin.h>
 #define tick() __rdtsc()
 #elif defined(__aarch64__)
-#define tick() { \
-  uint64_t x; \
-  asm volatile("mrs %0, cntvct_el0" : "=r"(x)); \
-  return x; \
+inline tick_impl() {
+  uint64_t x;
+  asm volatile("mrs %0, cntvct_el0" : "=r"(x));
+  return x;
 }
+#define tick() tick_impl()
 #else
 #error Architecture not supported
 #endif
@@ -72,11 +73,9 @@ int main() {
   unsigned char *private_region = mmap(0, SZ, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
   // Setup a shared barrier to coordinate processes for later tests
-  pthread_barrier_t *barrier = mmap(0, sizeof(pthread_barrier_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-  pthread_barrierattr_t attr = {0};
-  pthread_barrierattr_init(&attr);
-  pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-  pthread_barrier_init(barrier, &attr, 2);
+  // Setup simple coordination using GCC intrinsics
+  unsigned long *sem = mmap(0, sizeof(*sem), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+  *sem = 0;
 
   // Do work in the parent process
   do_work("parent, cow,     ", cow_region, COW);
@@ -96,17 +95,28 @@ int main() {
     return 0;
   }
 
-  // Do work in both
+  // Do work in both (with a new child to reset the CoW counters etc)
+  // This is a little tricky.  I'm using `sem` as a poor-man's shared-memory semaphore in a way that will almost
+  // certainly cause consistency issues if dropped into arbitrary code.  Be careful out there!
   if (fork()) {
-    pthread_barrier_wait(barrier);
+    __sync_add_and_fetch(sem, 1);
+    while (2 != *sem)
+      sched_yield();
     do_work("Psync,  cow,     ", cow_region, COW);
-    pthread_barrier_wait(barrier);
+
+    __sync_add_and_fetch(sem, 1);
+    while (4 != *sem)
+      sched_yield();
     do_work("Psync,  private, ", private_region, PRIVATE);
     wait(NULL);
   } else {
-    pthread_barrier_wait(barrier);
+    __sync_add_and_fetch(sem, 1);
+    while (2 != *sem)
+      sched_yield();
     do_work("Csync,  cow,     ", cow_region, COW);
-    pthread_barrier_wait(barrier);
+    __sync_add_and_fetch(sem, 1);
+    while (4 != *sem)
+      sched_yield();
     do_work("Csync,  private, ", private_region, PRIVATE);
     return 0;
   }
