@@ -1,16 +1,30 @@
 #include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <x86intrin.h>
 
 #define SZ (1024*4096) // 4 megs
 #define I_SZ (SZ - sizeof(size_t))
-#define ITER (1e3)
+#define ITER (1e2)
+
+// Silly time
+#if defined(__x86_64__)
+#include <x86intrin.h>
+#define tick() __rdtsc()
+#elif defined(__aarch64__)
+#define tick() { \
+  uint64_t x; \
+  asm volatile("mrs %0, cntvct_el0" : "=r"(x)); \
+  return x; \
+}
+#else
+#error Architecture not supported
+#endif
 
 void print(const char* msg1, const char* msg2, double num) {
   if (!msg1 || !msg2 || !*msg1 || !*msg2)
@@ -24,7 +38,7 @@ typedef enum TYPES{COW, PRIVATE}TYPES;
 
 void do_work(const char* msg, unsigned char *buf, int type) {
   // Do linear read
-  long long unsigned start_time = __rdtsc();
+  long long unsigned start_time = tick();
   volatile size_t *accum = (size_t*)buf; // use same storage for accumulation
   buf += sizeof(size_t);
   for (size_t i = 0; i < I_SZ; i++) {
@@ -35,20 +49,22 @@ void do_work(const char* msg, unsigned char *buf, int type) {
       *accum += buf[j];
     }
   }
+  uint64_t ticks = tick() - start_time;
   if (!r_baseline[type])
-    r_baseline[type] = __rdtsc() - start_time;
-  print(msg, "read,  ",(__rdtsc() - start_time)/r_baseline[type]);
+    r_baseline[type] = ticks;
+  print(msg, "read,  ", ticks / r_baseline[type]);
 
   // Do linear writes
-  start_time = __rdtsc();
+  start_time = tick();
   for (int i = 0; i < ITER; i++) {
     for (size_t j = 0; j < I_SZ; j++) {
       buf[j] = *accum;
     }
   }
+  ticks = tick() - start_time;
   if (!w_baseline[type])
-    w_baseline[type] = __rdtsc() - start_time;
-  print(msg, "write, ",(__rdtsc() - start_time)/w_baseline[type]);
+    w_baseline[type] = ticks;
+  print(msg, "write, ",ticks / w_baseline[type]);
 }
 
 int main() {
@@ -84,46 +100,15 @@ int main() {
   if (fork()) {
     pthread_barrier_wait(barrier);
     do_work("Psync,  cow,     ", cow_region, COW);
-  } else {
-    pthread_barrier_wait(barrier);
-    do_work("Csync,  cow,     ", cow_region, COW);
-    return 0;
-  }
-  if (fork()) {
     pthread_barrier_wait(barrier);
     do_work("Psync,  private, ", private_region, PRIVATE);
     wait(NULL);
   } else {
     pthread_barrier_wait(barrier);
+    do_work("Csync,  cow,     ", cow_region, COW);
+    pthread_barrier_wait(barrier);
     do_work("Csync,  private, ", private_region, PRIVATE);
     return 0;
   }
-  if (fork()) {
-    pthread_barrier_wait(barrier);
-    do_work(NULL,cow_region, COW);
-    pthread_barrier_wait(barrier);
-    do_work("Pamor,  cow,     ", cow_region, COW);
-    wait(NULL);
-  } else {
-    pthread_barrier_wait(barrier);
-    do_work(NULL, cow_region, COW);
-    pthread_barrier_wait(barrier);
-    do_work("Camor,  cow,     ", cow_region, COW);
-    return 0;
-  }
-  if (fork()) {
-    pthread_barrier_wait(barrier);
-    do_work(NULL, private_region, PRIVATE);
-    pthread_barrier_wait(barrier);
-    do_work("Pamor,  private, ", private_region, PRIVATE);
-    wait(NULL);
-  } else {
-    pthread_barrier_wait(barrier);
-    do_work(NULL, private_region, PRIVATE);
-    pthread_barrier_wait(barrier);
-    do_work("Camor,  private, ", private_region, PRIVATE);
-    return 0;
-  }
-  fflush(stdout);
   fflush(stdout);
 }
