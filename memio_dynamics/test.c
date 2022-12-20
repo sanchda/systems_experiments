@@ -17,7 +17,7 @@
 #include <x86intrin.h>
 #define tick() __rdtsc()
 #elif defined(__aarch64__)
-inline tick_impl() {
+inline uint64_t tick_impl() {
   uint64_t x;
   asm volatile("mrs %0, cntvct_el0" : "=r"(x));
   return x;
