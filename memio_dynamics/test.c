@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
-#define SZ (256*4096)
+#define SZ (1024*4096) // 4 megs
 #define I_SZ (SZ - sizeof(size_t))
 #define ITER (1e3)
 
