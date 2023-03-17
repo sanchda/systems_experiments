@@ -33,4 +33,7 @@ export -f checkRodata
 export -f checkFastCall
 export -f checkCystuff
 export SHOW_GOOD=false
-find . -name "*.so" -type f -exec bash -c 'checkCystuff "{}"' \;
+path="."
+[ ! -z "$1" ] && path="$1"
+[ ! -z "$2" ] && [ '--showgood' == "$2" ] && SHOW_GOOD=true
+find "$path" -name "*.so" -type f -exec bash -c 'checkCystuff "{}"' \;
