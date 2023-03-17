@@ -5,17 +5,22 @@
 
 int main() {
 
-  int (*foo)(void) = dlopen("libfoo.so", RTLD_LAZY);
-  if (!foo)
-    printf("Hey, couldn't get foo without `LD_PRELOAD`\n");
-  else
-    printf("Hey, I _could_ get foo without `LD_PRELOAD`\n");
+//  fprintf(stderr, "[foo]: I'm about to open libfoo.so\n");
+  void* handle;
+//  if (!dlopen("./libfoo.so", RTLD_GLOBAL | RTLD_LAZY)) {
+//    fprintf(stderr, "[foo]: Failed to do the first step (%s)\n", dlerror());
+//    return -1;
+//  }
 
   setenv("LD_LIBRARY_PATH", ".", 1);
-  foo = dlopen("libfoo.so", RTLD_LAZY);
-  if (!foo)
-    printf("Hey, couldn't get foo _with_ `LD_PRELOAD`\n");
-  else
-    printf("Hey, I _could_ get foo with `LD_PRELOAD`\n");
+  fprintf(stderr, "[foo]: I'm about to open libtransitive.so\n");
+  if (!(handle = dlopen("libtransitive.so", RTLD_LAZY))) {
+    fprintf(stderr, "[foo] Well, you failed (%s)\n", dlerror());
+    return -1;
+  }
+
+  int (*baz)(void) = dlsym(handle, "baz");
+
+  printf("Hey, the value of baz is %d\n", baz());
   return 0;
 }
