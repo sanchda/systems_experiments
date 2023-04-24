@@ -6,6 +6,11 @@
 #include <sys/wait.h>
 #include <pthread.h>
 
+#ifdef __APPLE__
+#include <sys/syscall.h>
+#define gettid() syscall(SYS_thread_selfid)
+#endif
+
 struct ThreadArgs {
   int index;
   pthread_t* tid_array;
