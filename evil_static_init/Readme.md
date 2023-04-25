@@ -1,4 +1,4 @@
-##evil_static_init
+## evil_static_init
 
 Static initialization occurs whenever a mapping is loaded, either at process load-time or even during dynamic loading.  The former occurs before `__start__`, and the latter occurs afterward.
 
