@@ -5,7 +5,7 @@ Static initialization occurs whenever a mapping is loaded, either at process loa
 Your library doesn't need to be referenced in the main code for initialization to occur.  You can do tricksy things with this.
 
 
-Three examples are given here.
+Four examples are given here.
 1. Does not load the dynamic library at all, regular execution occurs (echos the prompt)
 2. Build-time dependency.  Static initialization occurs at application startup.
 3. Dynamic-link dependency.  Static initialization occurs at `dlopen()`.
