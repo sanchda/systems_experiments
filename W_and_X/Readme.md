@@ -15,3 +15,5 @@ W^X without disabling it.
 5. copy the segment there
 6. mmap the memfd again with rx, but with MAP_FIXED to overwrite the already-mapped segment
 7. now you can write to rw and get the changes in rx without syscalls
+
+I think this implementation is thread-safe, which is kind of cool, but I'd need to think harder about that.
