@@ -2,8 +2,23 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+
+
+pid_t direct_fork(void) {
+  pid_t pid;
+  asm volatile (
+    "movl $57, %%eax\n"
+    "syscall\n"
+    "movl %%eax, %0\n"
+    : "=r"(pid)
+    :
+    : "%rax", "%rcx", "%r11"
+  );
+  return pid;
+}
 
 void handle_signal(int signal) {
   if (signal == SIGUSR1) {
@@ -30,7 +45,7 @@ int main() {
   }
 
   // Now fork
-  if (!fork()) {
+  if (!direct_fork()) {
     // Try to delete the timer in the child.  This will leak.
     if (timer_delete(timerID) == -1) {
       printf("Couldn't delete timer\n"); fflush(stdout);
