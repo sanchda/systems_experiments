@@ -16,7 +16,6 @@ int main() {
     // time()
     t = time(NULL);
 
-
     // clock_gettime(CLOCK_REALTIME,...
     ret = clock_gettime(CLOCK_REALTIME, &ts);
   }
