@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <time.h>
 
+#include <signal.h>
+#include <unistd.h>
+
 #include <sys/uio.h>
 
 #include "memcpy_safe.h"
@@ -12,46 +15,35 @@
 void print_throughput(struct timespec start, struct timespec end, size_t bytes, const char* msg_prefix) {
   double time_diff = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
   double throughput = bytes / time_diff / (1024 * 1024 * 1024);
-  printf("%s Throughput: %.2f GB/s\n", msg_prefix, throughput);
+  printf("%s: %.2f GB/s\n", msg_prefix, throughput);
 }
 
-typedef struct Dangerous {
-  int *first;
-  int *second;
-  int *third;
-  int *fourth;
-  int *fifth;
-} Dangerous;
+#define RUN_THROUGHPUT(func, dst, src, sz, print)     \
+{                                                     \
+  struct timespec start, end;                         \
+  clock_gettime(CLOCK_MONOTONIC, &start);             \
+  if (!func(dst, src, sz)) {                          \
+    printf("Test failed: %s\n", #func);               \
+    return;                                           \
+  }                                                   \
+  clock_gettime(CLOCK_MONOTONIC, &end);               \
+  if (print)                                          \
+    print_throughput(start, end, sz, "[T]("#func")"); \
+}
 
-static Dangerous d[10];
-
-__attribute__((constructor)) void init() {
-  // Populate each of the Dangerous structs so that the ints are randomly
-  // allocated
-  for (int i = 0; i < sizeof(d) / sizeof(d[0]); i++) {
-    d[i].first = malloc(sizeof(int));
-    d[i].second = malloc(sizeof(int));
-    d[i].third = malloc(sizeof(int));
-    d[i].fourth = malloc(sizeof(int));
-    d[i].fifth = malloc(sizeof(int));
-    switch (rand() % 35) {
-      case 0:
-        free(d[i].first); d[i].first = NULL;
-        break;
-      case 1:
-        free(d[i].second); d[i].second = NULL;
-        break;
-      case 2:
-        free(d[i].third); d[i].third = NULL;
-        break;
-      case 3:
-        free(d[i].fourth); d[i].fourth = NULL;
-        break;
-      case 4:
-        free(d[i].fifth); d[i].fifth = NULL;
-        break;
-    }
-  }
+#define RUN_LATENCY(func, dst, src, sz, iter, print)         \
+{                                                            \
+  struct timespec start, end;                                \
+  clock_gettime(CLOCK_MONOTONIC, &start);                    \
+  for (size_t i = 0; i < iter; i++) {                        \
+    if (!func(dst, src, sz)) {                               \
+      printf("Test failed: %s\n", #func);                    \
+      return;                                                \
+    }                                                        \
+  }                                                          \
+  clock_gettime(CLOCK_MONOTONIC, &end);                      \
+  if (print)                                                 \
+    print_throughput(start, end, sz * iter, "[L]("#func")"); \
 }
 
 bool test_read(void *dst, void *_, size_t sz) {
@@ -110,33 +102,31 @@ bool test_process_vm_readv(void *dst, void *src, size_t sz) {
   return flag;
 }
 
-// Runs a test on a single function
-#define RUN_THROUGHPUT(func, dst, src, sz, msg, print) \
-{                                                      \
-  struct timespec start, end;                          \
-  clock_gettime(CLOCK_MONOTONIC, &start);              \
-  if (!func(dst, src, sz)) {                           \
-    printf("Test failed: %s\n", #func);                \
-    return;                                            \
-  }                                                    \
-  clock_gettime(CLOCK_MONOTONIC, &end);                \
-  if (print)                                           \
-    print_throughput(start, end, sz, msg #func);       \
+// Sets a sigsegv handler and then returns false if during traversal of the data, a segfault occurs
+bool g_segfault_flag = true;
+void segfault_handler(int sig) {
+  g_segfault_flag = false;
 }
+bool test_segfault(void *dst, void *src, size_t sz) {
+  bool flag = true;
 
-#define RUN_LATENCY(func, dst, src, sz, iter, msg, print) \
-{                                                         \
-  struct timespec start, end;                             \
-  clock_gettime(CLOCK_MONOTONIC, &start);                 \
-  for (size_t i = 0; i < iter; i++) {                     \
-    if (!func(dst, src, sz)) {                            \
-      printf("Test failed: %s\n", #func);                 \
-      return;                                             \
-    }                                                     \
-  }                                                       \
-  clock_gettime(CLOCK_MONOTONIC, &end);                   \
-  if (print)                                              \
-    print_throughput(start, end, sz, msg #func);          \
+  // Setup handler
+  struct sigaction sa;
+  sa.sa_handler = segfault_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGSEGV, &sa, NULL);
+
+  // Iterate
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)src)[i])
+      flag = false;
+  }
+
+  // Teardown handler
+  sa.sa_handler = SIG_DFL; // Should actually restore
+  sigaction(SIGSEGV, &sa, NULL);
+  return g_segfault_flag && flag;
 }
 
 void throughput_tests(bool print) {
@@ -146,11 +136,12 @@ void throughput_tests(bool print) {
   char *dst = malloc(sz);
 
   // Tests
-  RUN_THROUGHPUT(test_read, dst, data, sz, "[T](read)", print);
-  RUN_THROUGHPUT(test_memcpy, dst, data, sz, "[T](memcpy)", print);
-  RUN_THROUGHPUT(test_memget_safe, dst, data, sz, "[T](memget)", print);
-  RUN_THROUGHPUT(test_memcpy_safe, dst, data, sz, "[T](memcpy_safe)", print);
-  RUN_THROUGHPUT(test_process_vm_readv, dst, data, sz, "[T](process_vm_readv)", print);
+  RUN_THROUGHPUT(test_read, dst, data, sz, print);
+  RUN_THROUGHPUT(test_memcpy, dst, data, sz, print);
+  RUN_THROUGHPUT(test_memget_safe, dst, data, sz, print);
+  RUN_THROUGHPUT(test_memcpy_safe, dst, data, sz, print);
+  RUN_THROUGHPUT(test_process_vm_readv, dst, data, sz, print);
+  RUN_THROUGHPUT(test_segfault, dst, data, sz, print);
 
   // Cleanup
   free(data);
@@ -165,11 +156,12 @@ void latency_tests(bool print) {
   char *dst = malloc(sz);
 
   // Tests
-  RUN_LATENCY(test_read, dst, data, sz, iter, "[T](read)", print);
-  RUN_LATENCY(test_memcpy, dst, data, sz, iter, "[T](memcpy)", print);
-  RUN_LATENCY(test_memget_safe, dst, data, sz, iter, "[T](memget)", print);
-  RUN_LATENCY(test_memcpy_safe, dst, data, sz, iter, "[T](memcpy_safe)", print);
-  RUN_LATENCY(test_process_vm_readv, dst, data, sz, iter, "[T](process_vm_readv)", print);
+  RUN_LATENCY(test_read, dst, data, sz, iter, print);
+  RUN_LATENCY(test_memcpy, dst, data, sz, iter, print);
+  RUN_LATENCY(test_memget_safe, dst, data, sz, iter, print);
+  RUN_LATENCY(test_memcpy_safe, dst, data, sz, iter, print);
+  RUN_LATENCY(test_process_vm_readv, dst, data, sz, iter, print);
+  RUN_LATENCY(test_segfault, dst, data, sz, iter, print);
 
   free(data);
   free(dst);
@@ -183,6 +175,7 @@ int main() {
 
   // Run the test suites
   throughput_tests(true);
+  printf("\n");
   latency_tests(true);
   return 0;
 }
