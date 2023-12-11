@@ -54,47 +54,105 @@ __attribute__((constructor)) void init() {
   }
 }
 
+bool test_read(void *dst, void *_, size_t sz) {
+  volatile bool flag = true;
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)dst)[i])
+      flag = false;
+  }
+  flag = true;
+  return flag;
+}
+
+bool test_memcpy(void *dst, void *src, size_t sz) {
+  bool flag = true;
+  memcpy(dst, src, sz);
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)src)[i])
+      flag = false;
+  }
+  return flag;
+}
+
+bool test_memcpy_safe(void *dst, void *src, size_t sz) {
+  bool flag = true;
+  memcpy_safe(dst, src, sz);
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)src)[i])
+      flag = false;
+  }
+  return flag;
+}
+
+bool test_memget_safe(void *_, void *src, size_t sz) {
+  bool flag = true;
+  char *dst = memget_safe(src, sz);
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)src)[i])
+      flag = false;
+  }
+  return flag;
+}
+
+bool test_process_vm_readv(void *dst, void *src, size_t sz) {
+  static struct iovec local[1];
+  static struct iovec remote[1];
+  bool flag = true;
+  local[0].iov_base = dst;
+  local[0].iov_len = sz;
+  remote[0].iov_base = src;
+  remote[0].iov_len = sz;
+  process_vm_readv(getpid(), local, 1, remote, 1, 0);
+  for (size_t i = 0; i < sz; i++) {
+    if (((char*)dst)[i] != ((char*)src)[i])
+      flag = false;
+  }
+  return flag;
+}
+
+// Runs a test on a single function
+#define RUN_THROUGHPUT(func, dst, src, sz, msg, print) \
+{                                                      \
+  struct timespec start, end;                          \
+  clock_gettime(CLOCK_MONOTONIC, &start);              \
+  if (!func(dst, src, sz)) {                           \
+    printf("Test failed: %s\n", #func);                \
+    return;                                            \
+  }                                                    \
+  clock_gettime(CLOCK_MONOTONIC, &end);                \
+  if (print)                                           \
+    print_throughput(start, end, sz, msg #func);       \
+}
+
+#define RUN_LATENCY(func, dst, src, sz, iter, msg, print) \
+{                                                         \
+  struct timespec start, end;                             \
+  clock_gettime(CLOCK_MONOTONIC, &start);                 \
+  for (size_t i = 0; i < iter; i++) {                     \
+    if (!func(dst, src, sz)) {                            \
+      printf("Test failed: %s\n", #func);                 \
+      return;                                             \
+    }                                                     \
+  }                                                       \
+  clock_gettime(CLOCK_MONOTONIC, &end);                   \
+  if (print)                                              \
+    print_throughput(start, end, sz, msg #func);          \
+}
+
 void throughput_tests(bool print) {
   // Time to test memcpy_safe on 100mb of data in one block
   size_t sz = 100 * 1024 * 1024;
   char *data = malloc(sz);
   char *dst = malloc(sz);
 
-  // Throw away one memget (warmup?)
-  memget_safe(data, sz);
+  // Tests
+  RUN_THROUGHPUT(test_read, dst, data, sz, "[T](read)", print);
+  RUN_THROUGHPUT(test_memcpy, dst, data, sz, "[T](memcpy)", print);
+  RUN_THROUGHPUT(test_memget_safe, dst, data, sz, "[T](memget)", print);
+  RUN_THROUGHPUT(test_memcpy_safe, dst, data, sz, "[T](memcpy_safe)", print);
+  RUN_THROUGHPUT(test_process_vm_readv, dst, data, sz, "[T](process_vm_readv)", print);
 
-  // Click a timer
-  struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
-
-  // Copy into the buffer
-  memget_safe(data, sz);
-
-  // Click the timer again
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz, "[T](write-static)");
-
-  // Now try the full copy operation
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  memcpy_safe(dst, data, sz);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz, "[T](write-memcpy)");
-
-  // Try process_vm_readv
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  struct iovec local[1];
-  struct iovec remote[1];
-  local[0].iov_base = dst;
-  local[0].iov_len = sz;
-  remote[0].iov_base = data;
-  remote[0].iov_len = sz;
-  process_vm_readv(getpid(), local, 1, remote, 1, 0);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz, "[T](process_vm_readv)");
-
+  // Cleanup
   free(data);
   free(dst);
 }
@@ -106,50 +164,24 @@ void latency_tests(bool print) {
   char *data = malloc(sz);
   char *dst = malloc(sz);
 
-  // Throw away one memget (warmup?)
-  memget_safe(data, sz);
-
-  // Click a timer
-  struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
-
-  // Copy into the buffer
-  for (int i = 0; i < iter; i++)
-    memget_safe(data, sz);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz*iter, "[L](write-static)");
-
-  // Now try the full copy operation
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (int i = 0; i < iter; i++)
-    memcpy_safe(dst, data, sz);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz*iter, "[L](write-memcpy)");
-
-  // Try process_vm_readv
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  struct iovec local[1];
-  struct iovec remote[1];
-  local[0].iov_base = dst;
-  local[0].iov_len = sz;
-  remote[0].iov_base = data;
-  remote[0].iov_len = sz;
-  for (int i = 0; i < iter; i++)
-    process_vm_readv(getpid(), local, 1, remote, 1, 0);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  if (print)
-    print_throughput(start, end, sz*iter, "[L](process_vm_readv)");
+  // Tests
+  RUN_LATENCY(test_read, dst, data, sz, iter, "[T](read)", print);
+  RUN_LATENCY(test_memcpy, dst, data, sz, iter, "[T](memcpy)", print);
+  RUN_LATENCY(test_memget_safe, dst, data, sz, iter, "[T](memget)", print);
+  RUN_LATENCY(test_memcpy_safe, dst, data, sz, iter, "[T](memcpy_safe)", print);
+  RUN_LATENCY(test_process_vm_readv, dst, data, sz, iter, "[T](process_vm_readv)", print);
 
   free(data);
   free(dst);
 }
 
 int main() {
+  // Warmup
   throughput_tests(false);
   throughput_tests(false);
   throughput_tests(false);
+
+  // Run the test suites
   throughput_tests(true);
   latency_tests(true);
   return 0;

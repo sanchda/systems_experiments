@@ -11,5 +11,6 @@ Again, and as a matter of introduction I emphasize, _generally_.
 
 Dealing with segfaults
 ==
-process_vm_readv
-old reliable: write
+* process_vm_readv
+* old reliable: write
+* sigsegv trapping
