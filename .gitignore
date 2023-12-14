@@ -3,3 +3,7 @@ a.out
 perf.data
 perf.data.old
 .gdb_history
+*.swp
+*.swo
+*.swx
+*.a
