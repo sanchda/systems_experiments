@@ -39,10 +39,10 @@ __attribute__((constructor)) void init_memcpy_safe(void) {
   }
 }
 
-void *memget_safe(void *dst, size_t n) {
+void *memget_safe(void *src, size_t n) {
   // use `writev()` to safely copy data to the buffer
   struct iovec iov;
-  iov.iov_base = g_buffer;
+  iov.iov_base = src;
   iov.iov_len = n;
   if (writev(g_fd, &iov, 1) == -1) {
     return NULL;
@@ -50,14 +50,14 @@ void *memget_safe(void *dst, size_t n) {
   return g_buffer;
 }
 
-bool memcpy_safe(void *dst, const void *src, size_t n) {
+bool memcpy_safe(void *dst, void *src, size_t n) {
   if (g_buffer == NULL || n > g_buffer_size)
     return false;
   if (n == 0)
     return true;
 
   // Now copy from the buffer to the destination
-  if (memget_safe(g_buffer, n) == NULL)
+  if (memget_safe(src, n) == NULL)
     return false;
   memcpy(dst, g_buffer, n);
   return true;
