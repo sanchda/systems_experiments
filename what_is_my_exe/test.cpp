@@ -26,4 +26,8 @@ std::string file_from_addr(void* addr) {
 int fingerprint = 0;
 int main() {
   std::cout << file_from_addr(&fingerprint) << std::endl;
+
+  // I believe that libc requires `main()` to be visible in the symbol table,
+  // so this should work too.
+  std::cout << file_from_addr(reinterpret_cast<void*>(&main)) << std::endl;
 }
