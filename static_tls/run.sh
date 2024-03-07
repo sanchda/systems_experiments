@@ -1,12 +1,10 @@
 #!/bin/bash
-# This is a hacky way of auditing a Python package for the use of thread-local storage (TLS)
-# Won't be able to get the top-level directory in a lot of instances, but it works well enough for me.
 if [ -z "$1" ]; then
-  echo "Usage: $0 <package>"
+  echo "Usage: $0 <libname>"
   exit 1
 fi
-package=$1
-export libs=$(python -m pip show $package | awk '/Location/ {print $2}')/${package}
+lib=$1
+export libs=$(python -m pip show $lib | awk '/Location/ {print $2}')/$lib
 
 # This is a list of visited libraries
 visited=()
@@ -26,8 +24,9 @@ check_tls() {
 
   # Let's add this to the list of visited libraries
   add_visited ${lib}
-  if readelf -lW ${lib} | grep TLS; then
+  if readelf -lW ${lib} | grep -q TLS; then
     echo "TLS section found in ${lib}"
+    echo "  size:"  `readelf -lW ${lib} | grep TLS | awk '{print $6}'`
     # List the symbols in the TLS section
     readelf -sW ${lib} | grep TLS
   fi
