@@ -71,5 +71,5 @@ RUN wget https://static.rust-lang.org/dist/rustc-nightly-src.tar.xz && \
 # Try to build the target Rust toolchain
 WORKDIR /rust
 COPY config.toml .
-#RUN python3 ./x.py build --stage 1 --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
-#RUN python3 ./x.py dist --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
+RUN python3 ./x.py build --stage 1 --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
+RUN python3 ./x.py dist --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
