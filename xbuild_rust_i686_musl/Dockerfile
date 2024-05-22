@@ -1,6 +1,7 @@
-# Install required packages and dependencies
 # Note: presumes the current BUILDPLATFORM has rust on Debian-based system
 FROM --platform=$BUILDPLATFORM rust:latest as builder
+
+# Install required packages and clean up to reduce layer size
 RUN apt-get update && apt-get install -y \
     autoconf \
     bash \
@@ -36,7 +37,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     texinfo \
     tzdata \
-    wget
+    wget && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Download and install crosstool-ng
 ENV CT_NG_VERSION=1.26.0
@@ -48,28 +50,30 @@ RUN cd /usr/local/src && \
     ./bootstrap && \
     ./configure --prefix=/usr/local && \
     make && \
-    make install
+    make install && \
+    rm -rf /usr/local/src/crosstool-ng
 
-## Create a cross-compilation toolchain for x86_64 gnu to i686 musl
+# Create a cross-compilation toolchain for x86_64 gnu to i686 musl
 RUN mkdir -p /usr/local/src/ct-ng
 COPY configs/i686-unknown-linux-musl /usr/local/src/ct-ng/.config
 WORKDIR /usr/local/src/ct-ng
-RUN ct-ng build
-
-## Download the musl toolchain
-#RUN wget -c http://musl.cc/i686-linux-musl-cross.tgz && \
-#    tar -xf i686-linux-musl-cross.tgz && \
-#    mv i686-linux-musl-cross musl
+RUN ct-ng build && rm -rf /usr/local/src/ct-ng
 
 # Download the Rust nightly source code
 WORKDIR /
 ENV RUST_VERSION=nightly
 RUN wget https://static.rust-lang.org/dist/rustc-nightly-src.tar.xz && \
     tar -xf rustc-nightly-src.tar.xz && \
-    mv rustc-nightly-src rust
+    mv rustc-nightly-src rust && \
+    rm rustc-nightly-src.tar.xz
 
 # Try to build the target Rust toolchain
 WORKDIR /rust
 COPY config.toml .
-RUN python3 ./x.py build --stage 1 --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
-RUN python3 ./x.py dist --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
+RUN python3 ./x.py build --stage 1 --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl && \
+    python3 ./x.py dist --host x86_64-unknown-linux-gnu --target i686-unknown-linux-musl
+
+## Final stage: Copy the built Rust toolchain to a minimal Alpine image
+FROM --platform=$TARGETPLATFORM alpine:latest as final
+RUN mkdir -p /rust/build
+COPY --from=builder /rust/build/x86_64-unknown-linux-gnu/stage2-std/i686-unknown-linux-musl /rust/build/i686-unknown-linux-musl
