@@ -47,6 +47,9 @@ int main(int argc, char *argv[]) {
             line++;
         }
     }
+
+    // Cleanup I guess, not that it matters.
+    munmap(data, st.st_size);
     return 0;
 }
 
