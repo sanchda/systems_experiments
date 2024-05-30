@@ -22,20 +22,20 @@ void protect_argv(int argc, char **argv) {
 
   // Figure out how many pages are spanned by argv members.  Strongly assume that this is a contiguous
   // range, which is usually a reasonable assumption.
-  unsigned char *first_page = PAGE_TRUNC(argv[0]);
-  unsigned char *last_page = PAGE_TRUNC(argv[argc - 1] + strlen(argv[argc - 1]));
+  char *first_page = PAGE_TRUNC(argv[0]);
+  char *last_page = PAGE_TRUNC(argv[argc - 1] + strlen(argv[argc - 1]));
   size_t num_pages = (last_page - first_page) / PAGE_SZ;
   num_pages++;
 
   // Ftruncate, etc
   if (ftruncate(fd, num_pages * PAGE_SZ) < 0) perror("ftruncate"), exit(1);
-  unsigned char *copy = mmap(NULL, num_pages * PAGE_SZ, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  char *copy = mmap(NULL, num_pages * PAGE_SZ, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
   // Copy the memory
   memcpy(copy, first_page, num_pages * PAGE_SZ);
 
   // Now, MAP_FIXED to over-write the range with a mapping from the secret memory
-  unsigned char *secret = mmap(first_page, num_pages * PAGE_SZ, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+  char *secret = mmap(first_page, num_pages * PAGE_SZ, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
   close(fd); // not needed
   munmap(copy, num_pages * PAGE_SZ); // not needed
 }
@@ -48,7 +48,7 @@ void print_validation_info(int argc, char **argv) {
 
   // Print out /proc/self/cmdline one page at a time (it may be longer)
   printf("Proc cmdline:\n");
-  unsigned char buffer[PAGE_SZ];
+  char buffer[PAGE_SZ];
   ssize_t read_sz;
   int cfd = open("/proc/self/cmdline", O_RDONLY);
 
