@@ -1,4 +1,4 @@
-# libc_wrapping
+=== ld_preload_wrapper
 
 People often refer to "LD_PRELOAD tricks," but then struggle to put one together.
 
