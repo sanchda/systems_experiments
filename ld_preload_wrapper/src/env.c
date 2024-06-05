@@ -18,21 +18,22 @@ static inline size_t strlen(const char *s) {
 // libc maintains that the first arg is the syscall number, which forces it to
 // reshuffle the arguments around.  We just pass it last here.
 inline static long syscall_3(long arg1, long arg2, long arg3, long number) {
-    long result;
+  long result;
 #if defined(__x86_64__)
-    asm volatile (
-        "syscall\n"            // Invoke syscall
-        : "=a" (result)        // Output operand (result in rax)
-        : "D" (arg1), "S" (arg2), "d" (arg3), "a" (number)  // Input operands
-        : "rcx", "r11", "memory"  // Clobbered registers
-    );
+  asm volatile (
+    "syscall\n"
+    : "=a" (result)
+    : "D" (arg1), "S" (arg2), "d" (arg3), "a" (number)
+    : "rcx", "r11", "memory"
+  );
 #elif defined(__aarch64__)
-    asm volatile (
-        "svc 0\n"              // Invoke syscall
-        : "=r" (result)        // Output operand (result in x0)
-        : "r" (arg1), "r" (arg2), "r" (arg3), "r" (number)  // Input operands in x0, x1, x2, x8 respectively
-        : "memory"  // Clobbered memory
-    );
+  asm volatile (
+    "mov x8, %4\n"
+    "svc 0\n"
+    : "=r" (result)
+    : "r" (arg1), "r" (arg2), "r" (arg3), "r" (number)
+    : "x8", "memory"
+  );
 #else
 #error "Unsupported architecture"
 #endif
