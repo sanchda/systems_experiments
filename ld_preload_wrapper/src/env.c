@@ -94,13 +94,13 @@ static void print_val(const char *msg, const char *value) {
 }
 
 // Defaults
-int (*real_setenv)(const char *, const char *, int) = NULL;
-char *(*real_getenv)(const char *) = NULL;
-int (*real_unsetenv)(const char *) = NULL;
-int (*real_putenv)(char *) = NULL;
-void (*real_clearenv)(void) = NULL;
+static int (*real_setenv)(const char *, const char *, int) = NULL;
+static char *(*real_getenv)(const char *) = NULL;
+static int (*real_unsetenv)(const char *) = NULL;
+static int (*real_putenv)(char *) = NULL;
+static void (*real_clearenv)(void) = NULL;
 
-__attribute__((constructor)) void init() {
+static __attribute__((constructor)) void init() {
   real_setenv = dlsym(RTLD_NEXT, "setenv");
   real_getenv = dlsym(RTLD_NEXT, "getenv");
   real_unsetenv = dlsym(RTLD_NEXT, "unsetenv");

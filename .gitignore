@@ -1,9 +1,19 @@
-a.out
+# Common build dirs
+**/build/
+
+# Binary files
 *.so
-perf.data
-perf.data.old
-.gdb_history
+*.a
+*.o
+a.out
+*.dylib
+
+# vim temps
 *.swp
 *.swo
 *.swx
-*.a
+
+# Debug stuff
+perf.data
+perf.data.old
+.gdb_history

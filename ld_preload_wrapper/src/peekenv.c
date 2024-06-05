@@ -11,8 +11,8 @@
 #include <stdlib.h>
 
 // The linker defines these symbols to the start and end of the binary, as well
-extern char _binary___env_start[];
-extern char _binary___env_end[];
+extern char _binary_env_start[];
+extern char _binary_env_end[];
 
 int main(int argc, char *argv[]) {
   // Need at least one arg
@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Extract the library from the binary and inject into LD_PRELOAD
-  add_to_ld_preload(_binary___env_start, _binary___env_end);
+  add_to_ld_preload(_binary_env_start, _binary_env_end);
 
   // execve the command and shift the args
   int ret = execvp(argv[1], argv + 1);
