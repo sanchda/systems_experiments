@@ -9,7 +9,7 @@ def is_python_shebang(line):
 
 def is_text_file(filepath):
     try:
-        result = subprocess.run(['file', '--mime-type', filepath], capture_output=True, text=True)
+        result = subprocess.run(['file', '-L', '--mime-type', filepath], capture_output=True, text=True)
         mime_type = result.stdout.split(':')[1].strip()
         return mime_type.startswith('text')
     except Exception as e:
