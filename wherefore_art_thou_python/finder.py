@@ -22,7 +22,7 @@ def check_file_for_shebang(filepath):
                 first_line = file.readline().strip()
                 if is_python_shebang(first_line):
                     print(f"{filepath}")
-        except (IOError, OSError):
+        except (IOError, OSError, UnicodeDecodeError):
                 pass
 
 def search_directory(directory):
