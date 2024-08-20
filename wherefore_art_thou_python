@@ -1,4 +1,5 @@
 # wherefore doesn't mean "where" lol
+# eg python3 finder.py $(echo $PATH | tr ':' ' ') | xargs -n 1 basename | sort | uniq
 import os
 import sys
 import subprocess
