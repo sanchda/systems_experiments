@@ -1,5 +1,6 @@
-import ctypes
 import contextvars
+import ctypes
+import sys
 
 libpython = ctypes.PyDLL(None)
 libpython.Py_DecRef.argtypes = [ctypes.py_object]
@@ -23,10 +24,17 @@ def crash():
     var = contextvars.ContextVar('var', default=None)
     var.set("Oops")
 
+def main():
+    print("Populating")
+    populate()
+    print("Depopulating")
+    depop()
+    if len(sys.argv) > 1 and sys.argv[1] == "crash":
+        print("Crashing")
+        crash()
+        print("Should have crashed now.")
+    print("Done.  We might segfault now because this is a toy example, but that's fine.")
+
 
 if __name__ == '__main__':
-    populate()
-    print("populated")
-    depop()
-    crash()
-    print("Done.  We might segfault now because this is a toy example, but that's fine.")
+    main()
