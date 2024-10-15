@@ -10,6 +10,7 @@ a.out
 *.dylib
 test
 main
+foo
 
 # vim temps
 *.swp
