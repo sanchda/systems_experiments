@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <spawn.h>
+#include <stdlib.h>
 
 
 // clone syscall
@@ -55,6 +56,7 @@ pid_t clone_like_vfork() {
 
 void cause_a_horrible_segmentation_fault_to_occur() {
   printf("Process %d has hit an atfork handler\n", getpid());
+  fflush(stdout);
   int *p = 0;
   *p = 0;
 }
@@ -83,9 +85,28 @@ void print_help() {
   printf("Usage: %s [fork|vfork|clone_fork|clone_vfork|spawn]\n", argv0);
 }
 
+void segfault_handler(int sig) {
+  printf("Process %d has hit a segfault\n", getpid());
+  fflush(stdout);
+  exit(128 + sig);
+}
+
+void done() {
+  printf("Clean exit for %d\n", getpid());
+  fflush(stdout);
+}
+
+__attribute__((constructor))
+void setup() {
+  // If LD_PRELOAD is not set, then instrument our own signal handler
+  if (getenv("LD_PRELOAD") == NULL) {
+    signal(SIGSEGV, segfault_handler);
+  }
+}
+
 int main(int argc, char **argv) {
-  // Process the command line arguments
   argv0 = argv[0];
+
   // Set the atfork handlers to cause a segfault
   pthread_atfork(
     cause_a_horrible_segmentation_fault_to_occur,
@@ -100,6 +121,11 @@ int main(int argc, char **argv) {
       pid = fork();
     } else if (strcasecmp(argv[1], "vfork") == 0) {
       pid = vfork();
+      if (pid == 0) {
+        // This is a vfork child, so we should exit immediately
+        done();
+        exit(0);
+      }
     } else if (strcasecmp(argv[1], "clone_fork") == 0) {
       pid = clone_like_fork();
     } else if (strcasecmp(argv[1], "clone_vfork") == 0) {
@@ -112,6 +138,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("Clean exit for %d\n", getpid());
+  done();
   return 0;
 }

@@ -1,2 +1,2 @@
 #!/bin/bash
-gcc -o clone clone.c -lpthread
+gcc -Og -ggdb3 -o clone clone.c -lpthread
