@@ -46,7 +46,7 @@ public:
     for (const auto &c : sv)
       count_cond += lower_cond(c);
     cycles_cond += __rdtsc() - cycles;
-  
+
 
     // Warmup
     for (const auto &c : sv)
