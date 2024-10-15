@@ -14,6 +14,21 @@ static inline size_t strlen(const char *s) {
   return len;
 }
 
+
+>-------.text
+ENTRY (syscall)
+>-------movq %rdi, %rax>>-------/* Syscall number -> rax.  */
+>-------movq %rsi, %rdi>>-------/* shift arg1 - arg5.  */
+>-------movq %rdx, %rsi
+>-------movq %rcx, %rdx
+>-------movq %r8, %r10
+>-------movq %r9, %r8
+>-------movq 8(%rsp),%r9>-------/* arg6 is on the stack.  */
+>-------syscall>>------->-------/* Do the system call.  */
+>-------cmpq $-4095, %rax>------/* Check %rax for error.  */
+>-------jae SYSCALL_ERROR_LABEL>/* Jump to error handler if error.  */
+>-------ret>---->------->-------/* Return to caller.  */
+
 // Inline assembly function for a syscall with 3 arguments
 // libc maintains that the first arg is the syscall number, which forces it to
 // reshuffle the arguments around.  We just pass it last here.

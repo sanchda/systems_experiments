@@ -26,11 +26,11 @@
 template<typename T>
 class Buffer {
  public:
-  void add(const T& value) { buffer.push_back(value); }
-  size_t serializedSize() const { return ALIGN_8(buffer.size() * sizeof(T)); }
-  const T* data() const { return buffer.data(); }
-  void clear() { buffer.clear(); }
-  size_t size() const { return buffer.size(); }
+  void add(const T& value);
+  size_t stored_size() const;
+  size_t size() const;
+  const T* data() const;
+  void clear();
 
  private:
   std::vector<T> buffer;
@@ -38,32 +38,25 @@ class Buffer {
 
 // Specialization for std::string and std::string_view
 template<>
-class Buffer<std::string> {
+class Buffer<std::string_view> {
  public:
-  void add(const std::string& value) { addStringData(value); }
-  void add(const std::string_view& value) { addStringData(value); }
-  size_t serializedSize() const { return ALIGN_8(buffer.size()); }
-  const char* data() const { return buffer.data(); }
-  void clear() { buffer.clear(); }
-  size_t size() const { return n_elem; }
+  void add(std::string_view val);
+  size_t serializedSize() const;
+  const char* data() const;
+  void clear();
+  size_t size() const;
 
  private:
   std::vector<char> buffer;
   size_t n_elem = 0;
 
-  template<typename StringType>
-  void addStringData(const StringType& value) {
-    buffer.reserve(buffer.size() + value.size() + 1);
-    std::copy(value.begin(), value.end(), std::back_inserter(buffer));
-    buffer.push_back('\0');
-    n_elem++;
-  }
+  void add_string(std::string_view val);
 };
 
 struct RBIn {
   Buffer<int64_t> lines;
-  Buffer<std::string> filenames;
-  Buffer<std::string> names;
+  Buffer<std::string_view> filenames;
+  Buffer<std::string_view> names;
   std::vector<int64_t> values;
 
   size_t serializedSize() const {

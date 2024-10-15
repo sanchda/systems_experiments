@@ -5,8 +5,11 @@
 *.so
 *.a
 *.o
+*.dwo
 a.out
 *.dylib
+test
+main
 
 # vim temps
 *.swp
