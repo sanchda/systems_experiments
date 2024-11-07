@@ -57,8 +57,8 @@ pid_t clone_like_vfork() {
 void cause_a_horrible_segmentation_fault_to_occur() {
   printf("Process %d has hit an atfork handler\n", getpid());
   fflush(stdout);
-  int *p = 0;
-  *p = 0;
+//  int *p = 0;
+//  *p = 0;
 }
 
 char *argv0;
