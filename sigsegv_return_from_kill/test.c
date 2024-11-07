@@ -53,12 +53,21 @@ void setup_sigaltstack()
     }
 }
 
+// Determined whether we call tgkill or kill
+bool signal_use_tgkill = false;
+
 void segfault_handler(int signum) {
     printf("Attempting to return from the handler...\n");
     sigaction(SIGSEGV, &old_sa, NULL);
     pid_t pid = getpid();
     pid_t tid = syscall(SYS_gettid);
-    tgkill(pid, tid, SIGSEGV);
+    if (signal_use_tgkill) {
+        tgkill(pid, tid, SIGSEGV);
+    } else {
+        kill(pid, SIGSEGV);
+    }
+
+    printf("I raised the signal.  I'm leaving now lol\n");
 }
 
 // This thread just sits in a loop and prints "hello" every 1 second
@@ -98,9 +107,9 @@ int main(int argc, char** argv) {
             printf("---- Using tgkill instead of kill\n");
             use_tgkill = true;
         }
-        else if (strcmp(argv[i], "altstack") == 0) {
-            printf("---- Using an alternate stack\n");
-            use_altstack = true;
+        else if (strcmp(argv[i], "signal_tgkill") == 0) {
+            printf("---- Using tgkill instead of kill (in signal!)\n");
+            signal_use_tgkill = true;
         }
         else if (strcmp(argv[i], "container") == 0) {
             printf("---- Pretending to be in a container\n");
