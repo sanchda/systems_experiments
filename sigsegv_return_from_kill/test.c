@@ -1,11 +1,35 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-#include <signal.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <sys/syscall.h>
+#define _GNU_SOURCE
+#include <errno.h>
 #include <pthread.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+void pretend_to_be_in_container() {
+    if (unshare(CLONE_NEWPID) == -1) {
+        perror("unshare");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        // Child process
+        // Does nothing and returns
+    } else {
+        // Parent process
+        // In old namespace, exits
+        _exit(EXIT_SUCCESS);
+    }
+}
 
 // Stores the old sigaction
 struct sigaction old_sa;
@@ -77,6 +101,10 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "altstack") == 0) {
             printf("---- Using an alternate stack\n");
             use_altstack = true;
+        }
+        else if (strcmp(argv[i], "container") == 0) {
+            printf("---- Pretending to be in a container\n");
+            pretend_to_be_in_container();
         }
         else {
             printf("Unknown argument: %s\n", argv[i]);
