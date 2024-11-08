@@ -10,7 +10,7 @@ I made this experiment to explore a few different conditions.
 For some reason, many developers attempt to avoid segmentation faults, and in so doing they lose insight into what they are and how they work.
 A segmentation fault is essentially any violation of memory acccess.
 Typically, this involves accessing a page which is unmapped in the given process (MAPERR).
-It can also involve accessing a page which is mapped, but the access more (read/write/execute) is not allowed (ACCERR).
+It can also involve accessing a page which is mapped, but the access mode (read/write/execute) is not permitted (ACCERR).
 
 At any rate, these cases are handled by the MMU at time of instruction execution.
 The MMU will coordinate with the kernel to generate and emit the signal.
