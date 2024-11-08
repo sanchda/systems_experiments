@@ -178,6 +178,7 @@ Here's the vital sequence:
 1325084 write(1, "[1:2] I raised a segfault, but I'm alive now.\n", 46) = 46
 ```
 
+Let's focus on just the handling thread.
 The handler uninstalls itself, replaces itself with `SIG_DFL`, and then re-raises the signal.
 ```
 1325084 kill(1, SIGSEGV)                = 0
