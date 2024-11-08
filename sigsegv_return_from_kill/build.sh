@@ -1,2 +1,2 @@
 #!/bin/bash
-gcc -o test test.c -lpthread
+gcc -Wextra -Wall -Wpedantic -o watchseg watchseg.c -lpthread
