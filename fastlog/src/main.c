@@ -1,11 +1,12 @@
 #include "fastlog.h"
-#include <x86intrin.h> // For __rdtsc()
+#include <x86intrin.h>  // For __rdtsc()
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv)
+{
     (void)argc;
     (void)argv;
 
-    log_context_t *log = init_log("vmread_trace.bin", 1024 * 1024);
+    log_context_t* log = init_log("vmread_trace.bin", 1024 * 1024);
     if (!log) {
         perror("Failed to initialize log");
         return 1;
@@ -24,12 +25,12 @@ int main(int argc, char **argv) {
     }
 
     // Read back all records
-    log_iterator_t *iter = create_iterator(log);
+    log_iterator_t* iter = create_iterator(log);
     log_record_t record;
 
     while (next_record(iter, &record)) {
-        printf("Gen: %lu, TSC: %lu, Addr: 0x%lx, Size: %lu\n",
-               record.generation, record.tsc, record.address, record.size);
+        printf(
+            "Gen: %lu, TSC: %lu, Addr: 0x%lx, Size: %lu\n", record.generation, record.tsc, record.address, record.size);
     }
 
     free_iterator(iter);

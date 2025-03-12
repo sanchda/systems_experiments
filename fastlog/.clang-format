@@ -1,36 +1,69 @@
-#include "append_only_log.h"
-#include <x86intrin.h> // For __rdtsc()
-
-int main() {
-    // Initialize log with 1MB chunks
-    log_context_t *log = init_log("vmread_trace.bin", 1024 * 1024);
-    if (!log) {
-        perror("Failed to initialize log");
-        return 1;
-    }
-
-    // Record process_vm_readv call
-    uint64_t generation = 1;
-    uint64_t tsc = __rdtsc();
-    uint64_t address = 0x7fff1234;
-    uint64_t size = 4096;
-
-    if (!append_record(log, generation, tsc, address, size)) {
-        perror("Failed to append record");
-        close_log(log);
-        return 1;
-    }
-
-    // Read back all records
-    log_iterator_t *iter = create_iterator(log);
-    log_record_t record;
-
-    while (next_record(iter, &record)) {
-        printf("Gen: %lu, TSC: %lu, Addr: 0x%lx, Size: %lu\n",
-               record.generation, record.tsc, record.address, record.size);
-    }
-
-    free_iterator(iter);
-    close_log(log);
-    return 0;
-}
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+AllowShortIfStatementsOnASingleLine: false
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+CompactNamespaces: false
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+Cpp11BracedListStyle: true
+DerivePointerAlignment: false
+FixNamespaceComments: true
+IncludeBlocks: Preserve
+IndentCaseLabels: true
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
+PointerAlignment: Left
+ReflowComments: true
+SortIncludes: true
+SortUsingDeclarations: true
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Standard: c++17
+TabWidth: 4
+UseTab: Never
