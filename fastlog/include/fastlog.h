@@ -5,6 +5,7 @@
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,13 +23,14 @@
 #define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
 
 typedef struct {
-    uint32_t version;     // Format version number
-    _Atomic bool is_ready;        // Initialization flag (true when fully initialized)
-    _Atomic bool is_locked;       // Lock flag for file extension
-    _Atomic uint64_t file_size;   // Current physical size of the data file
-    _Atomic uint64_t cursor;      // Current append position
-    uint32_t page_size;   // Fixed page size value
-    uint32_t chunk_size;  // Size of chunks (multiple of page_size)
+    uint32_t version;            // Format version number
+    _Atomic bool is_ready;       // Initialization flag (true when fully initialized)
+    _Atomic bool is_locked;      // Lock flag for file extension
+    _Atomic bool is_panicked;    // Panic flag (true when log is in an inconsistent state)
+    _Atomic uint64_t file_size;  // Current physical size of the data file
+    _Atomic uint64_t cursor;     // Current append position
+    uint32_t page_size;          // Fixed page size value
+    uint32_t chunk_size;         // Size of chunks (multiple of page_size)
 } log_metadata_t;
 
 // Chunk tracking (returned at checkout time)
@@ -50,6 +52,7 @@ typedef struct {
 
 // Range returned from checkout operation
 typedef struct {
+    bool is_valid;          // True if this range is valid
     uint64_t start;         // Start position in log
     uint64_t end;           // End position in log
     chunk_info_t* chunk;    // Pointer to the chunk containing this range
@@ -68,7 +71,8 @@ int64_t ms_since_epoch_monotonic(void)
 bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
     ftruncate(fd_meta, sizeof(log_metadata_t));
-    log_metadata_t* metadata = mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
+    log_metadata_t* metadata =
+        (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
     int fd_data = -1;
     if (MAP_FAILED == metadata) {
         goto files_create_cleanup;
@@ -130,7 +134,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     }
 
     // Nothing is valid until we've mapped the metadata
-    metadata = mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
+    metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
     if (MAP_FAILED == metadata || metadata->version != MMLOG_VERSION) {
         goto files_open_cleanup;
     }
@@ -225,74 +229,75 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size)
     return handle;
 }
 
-bool data_file_expand(log_handle_t *handle, uint64_t end) {
-    log_metadata_t *metadata = handle->metadata;
+bool data_file_expand(log_handle_t* handle, uint64_t end)
+{
+    log_metadata_t* metadata = handle->metadata;
     bool expected = false;
 
-    // TODO factor this into some kind of retry loop
-    if (atomic_compare_exchange_strong(&metadata->is_locked, &expected, true)) {
-        // We acquired the lock, perform extension
+    int64_t start_time = ms_since_epoch_monotonic();
+    int64_t cur_time = start_time;
+    while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
+        if (atomic_load(&metadata->is_panicked)) {
+            return false;
+        }
 
-        // Recheck file size after acquiring lock (another process might have extended)
-        uint64_t file_size = atomic_load(&metadata->file_size);
-
-        // Still need extension?
-        if (end > file_size) {
-            // Calculate new size (round up to next chunk size)
-            uint64_t new_size = ALIGN(end, metadata->chunk_size);
-
-            // Extend the file
-            if (ftruncate(handle->data_fd, new_size) == 0) {
-                // Update file size in metadata
+        if (atomic_compare_exchange_strong(&metadata->is_locked, &expected, true)) {
+            uint64_t file_size = atomic_load(&metadata->file_size);
+            if (file_size < end) {
+                uint64_t new_size = ALIGN(end, metadata->chunk_size);
+                if (-1 == ftruncate(handle->data_fd, new_size)) {
+                    // Whoa, we can't ftruncate!  Everything sucks!
+                    atomic_store(&metadata->is_panicked, true);
+                    atomic_store(&metadata->is_locked, false);
+                    return false;
+                }
                 atomic_store(&metadata->file_size, new_size);
+                atomic_store(&metadata->is_locked, false);
                 file_size = new_size;
-
-                // Update generation since file layout changed
                 handle->current_generation++;
+                return true;
+            }
+        } else {
+            // Can't take the lock, which probably means someone else has it
+            // Let's try again later
+            sched_yield();
+            uint64_t file_size = atomic_load(&metadata->file_size);
+            if (file_size >= end) {
+                return true;
             }
         }
 
-        // Release the lock
-        atomic_store(&metadata->is_locked, false);
-    } else {
-        // Another process is extending, wait for completion
-        while (atomic_load(&metadata->is_locked)) {
-            sched_yield();
-        }
-
-        // Get updated file size
-        uint64_t file_size = atomic_load(&metadata->file_size);
-
-        // If still not extended enough after waiting, fail
-        if (end > file_size) {
-            errno = EAGAIN;
-            return false;
-        }
+        cur_time = ms_since_epoch_monotonic();
     }
 
-    return true;
+    // If we're here, then we timed out
+    return false;
 }
 
-log_range_t mmlog_checkout(log_handle_t *handle, size_t size) {
+log_range_t mmlog_checkout(log_handle_t* handle, size_t size)
+{
     log_range_t result = {0};
 
     // Validate parameters
-    if (!handle || !handle->metadata || size == 0) {
+    if (!handle || !handle->metadata || size == 0 || size > handle->metadata->chunk_size) {
         errno = EINVAL;
         return result;
     }
 
-    log_metadata_t *metadata = handle->metadata;
+    log_metadata_t* metadata = handle->metadata;
     uint32_t chunk_size = metadata->chunk_size;
 
     // Atomically claim the range
-    uint64_t start = atomic_fetch_add(&metadata->cursor, size);
-    uint64_t end = start + size;
+    uint64_t end = atomic_fetch_add(&metadata->cursor, size);
+    uint64_t start = end - size;
+    if (start >= end) {
+        // Uh, some kind of overflow happened?
+        errno = EOVERFLOW;
+        return result;
+    }
 
     // Check if we need to extend the file
     uint64_t file_size = atomic_load(&metadata->file_size);
-
-    // If range extends beyond current file size, handle extension
     if (end > file_size) {
         if (!data_file_expand(handle, end)) {
             return result;
@@ -307,16 +312,14 @@ log_range_t mmlog_checkout(log_handle_t *handle, size_t size) {
     }
 
     // Create a new chunk
-    chunk_info_t *chunk = calloc(1, sizeof(chunk_info_t));
+    chunk_info_t* chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
     if (!chunk) {
         errno = ENOMEM;
         return result;
     }
 
     // Map the chunk
-    chunk->mapping = mmap(NULL, chunk_end - chunk_start,
-                         PROT_READ | PROT_WRITE, MAP_SHARED,
-                         handle->data_fd, chunk_start);
+    chunk->mapping = mmap(NULL, chunk_size, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data_fd, chunk_start);
 
     if (chunk->mapping == MAP_FAILED) {
         free(chunk);
@@ -327,7 +330,6 @@ log_range_t mmlog_checkout(log_handle_t *handle, size_t size) {
     // Initialize chunk info
     chunk->start_offset = chunk_start;
     chunk->size = chunk_end - chunk_start;
-    chunk->generation = handle->current_generation;
     atomic_store(&chunk->ref_count, 1);
 
     // Set up the result
