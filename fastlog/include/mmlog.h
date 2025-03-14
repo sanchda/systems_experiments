@@ -35,22 +35,26 @@ typedef struct {
 
 // Chunk tracking (returned at checkout time)
 typedef struct chunk_info_t {
-    void* mapping;                      // Pointer to mapped memory
+    bool is_untracked;                  // A special chunk that is used to back "temporary" ranges
     uint64_t start_offset;              // Start offset in file
     uint64_t size;                      // Size of this chunk
+    void* mapping;                      // Pointer to mapped memory
     _Atomic uint32_t ref_count;         // Number of active users (atomic)
-    struct chunk_info_t* _Atomic next;  // Next chunk in list (atomic pointer)
-    _Atomic bool is_unmappable;         // True when this chunk can be unmapped (not the tail)
 } chunk_info_t;
+
+typedef struct {
+    chunk_info_t** buffer;  // Buffer for chunk_info_t (maybe make this configurable?)
+    size_t capacity;        // Capacity of the buffer
+    _Atomic size_t head;    // Where to put the next chunk (head is unavailable)
+    _Atomic size_t tail;    // Oldest chunk (tail is available)
+} chunk_buffer_t;
 
 // Process-local state
 typedef struct {
     int metadata_fd;               // File descriptor for metadata
     int data_fd;                   // File descriptor for data
     log_metadata_t* metadata;      // Pointer to mapped metadata
-    chunk_info_t* _Atomic head;    // Head of chunk list (oldest chunk)
-    chunk_info_t* _Atomic tail;    // Tail of chunk list (newest chunk, where new writes go)
-    _Atomic uint32_t chunk_count;  // Number of chunks in the list
+    chunk_buffer_t chunks;         // Ringbuffer for current chunks
 } log_handle_t;
 
 // Range returned from checkout operation
@@ -61,6 +65,13 @@ typedef struct {
     chunk_info_t* chunk;    // Pointer to the chunk containing this range
     uint64_t chunk_offset;  // Offset into the chunk where this range begins
 } log_range_t;
+
+// Sentinel value for invalid cursor
+#define LOG_CURSOR_INVALID ((uint64_t)-1)
+
+// Sentinel value for chunk in intermediate state
+#define CHUNK_PENDING (chunk_info_t*)1
+
 
 int64_t ms_since_epoch_monotonic(void)
 {
@@ -115,13 +126,16 @@ files_create_cleanup:
 bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
 {
     int fd_meta = open(meta_filename, O_RDWR);
+    int fd_data = -1;
+    int64_t start_time = 0;
+    int64_t cur_time = 0;
     log_metadata_t* metadata = NULL;
     if (-1 == fd_meta) {
         return false;
     }
 
     // Before we mmap the metadata, check the file size.  If it's nonzero, but less than the size of the metadata, it's
-    // probable that we have an incompatable metadata version--so bail out
+    // probable that we have an incompatible metadata version--so bail out
     int retries = 3;
     bool is_ok = false;
     while (--retries) {
@@ -144,8 +158,8 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     }
 
     // Sit in a try-sleep loop for checking readiness
-    int64_t start_time = ms_since_epoch_monotonic();
-    int64_t cur_time = start_time;
+    start_time = ms_since_epoch_monotonic();
+    cur_time = start_time;
     is_ok = false;
     while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
         if (atomic_load(&metadata->is_ready)) {
@@ -161,7 +175,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     }
 
     // Finally, we have to open the data file
-    int fd_data = open(filename, O_RDWR);
+    fd_data = open(filename, O_RDWR);
     if (-1 == fd_data) {
         goto files_open_cleanup;
     }
@@ -212,10 +226,10 @@ files_open_or_create_cleanup:
     return false;
 }
 
-log_handle_t* mmlog_open(const char* filename, size_t chunk_size)
+log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk_count)
 {
     // Validate chunk size (must be multiple of page size)
-    if (chunk_size % LOG_PAGE_SIZE != 0 || chunk_size == 0) {
+    if (chunk_size % LOG_PAGE_SIZE != 0 || chunk_size == 0 || chunk_count == 0) {
         errno = EINVAL;
         return NULL;
     }
@@ -226,7 +240,20 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size)
         return NULL;
     }
 
+    // Allocate chunk buffer
+    handle->chunks.capacity = chunk_count;
+    handle->chunks.buffer = (chunk_info_t**)calloc(chunk_count, sizeof(chunk_info_t*));
+    if (!handle->chunks.buffer) {
+        free(handle);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < chunk_count; i++) {
+        handle->chunks.buffer[i] = NULL;
+    }
+
     if (!files_open_or_create(filename, chunk_size, handle)) {
+        free(handle->chunks.buffer);
         free(handle);
         return NULL;
     }
@@ -278,208 +305,107 @@ bool data_file_expand(log_handle_t* handle, uint64_t end)
     return false;
 }
 
-log_range_t mmlog_checkout(log_handle_t* handle, size_t size)
+uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
 {
-    log_range_t result = {0};
-
-    // Validate parameters
-    if (!handle || !handle->metadata || size == 0) {
-        perror("mmlog_checkout: Invalid arguments");
+    // Gets the start position for the requested write operation
+    // Will increase the capacity of the file if needed, but does not map the new pages
+    if (!handle || !handle->metadata) {
         errno = EINVAL;
-        return result;
+        return LOG_CURSOR_INVALID;
     }
 
     log_metadata_t* metadata = handle->metadata;
-    uint32_t chunk_size = metadata->chunk_size;
-
-    // Atomically claim the range
     uint64_t start = atomic_fetch_add(&metadata->cursor, size);
     uint64_t end = start + size;
+    uint64_t file_size = atomic_load(&metadata->file_size);
 
-    // Calculate chunk boundaries for this range
-    uint64_t chunk_start = (start / chunk_size) * chunk_size;
-    uint64_t chunk_end = chunk_start + chunk_size;
-
-    // Get the current tail chunk - safe to access with atomic_load
-    chunk_info_t* tail = atomic_load(&handle->tail);
-    chunk_info_t* chunk = NULL;
-
-    // Check if we have a tail and if the requested range is within it
-    if (tail && tail->start_offset == chunk_start) {
-        // The range falls within the current tail chunk
-        chunk = tail;
-        atomic_fetch_add(&chunk->ref_count, 1);
-    } else {
-        // Need to check if we need to expand the file
-        uint64_t file_size = atomic_load(&metadata->file_size);
-        if (end > file_size) {
-            if (!data_file_expand(handle, end)) {
-                perror("mmlog_checkout: Failed to expand file");
-                return result;
-            }
-            // Get the updated file size after expansion
-            file_size = atomic_load(&metadata->file_size);
-        }
-
-        // Need to create a new chunk
-        chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
-        if (!chunk) {
-            perror("mmlog_checkout: Failed to allocate chunk");
-            errno = ENOMEM;
-            return result;
-        }
-
-        // Map the chunk
-        chunk->mapping = mmap(NULL, chunk_size, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data_fd, chunk_start);
-        if (chunk->mapping == MAP_FAILED) {
-            perror("mmlog_checkout: Failed to map chunk");
-            free(chunk);
-            errno = ENOMEM;
-            return result;
-        }
-
-        // Initialize chunk info
-        chunk->start_offset = chunk_start;
-        chunk->size = chunk_end < file_size ? chunk_size : (file_size - chunk_start);
-        atomic_store(&chunk->ref_count, 1);
-        atomic_store(&chunk->next, NULL);
-        atomic_store(&chunk->is_unmappable, false);  // New chunk is not unmappable yet
-
-        // Update the linked list - handle first-time initialization safely
-        if (atomic_load(&handle->head) == NULL) {
-            // This is the first chunk
-            atomic_store(&handle->head, chunk);
-            atomic_store(&handle->tail, chunk);
-            atomic_store(&handle->chunk_count, 1);
-        } else {
-            // We know tail exists since head exists
-            tail = atomic_load(&handle->tail);
-
-            // Mark previous tail as unmappable
-            atomic_store(&tail->is_unmappable, true);
-
-            // Add the new chunk to the list
-            atomic_store(&tail->next, chunk);
-            atomic_store(&handle->tail, chunk);
-            atomic_fetch_add(&handle->chunk_count, 1);
+    if (end > file_size) {
+        if (!data_file_expand(handle, end)) {
+            return LOG_CURSOR_INVALID;
         }
     }
-
-    // Set up the result
-    result.is_valid = true;
-    result.start = start;
-    result.end = end;
-    result.chunk = chunk;
-    result.chunk_offset = start - chunk_start;
-
-    return result;
+    return start;
 }
 
-bool mmlog_checkin(log_handle_t* handle, log_range_t* range)
+
+bool mmlog_clean_chunks(log_handle_t *handle)
 {
-    if (!handle || !range || !range->is_valid || !range->chunk) {
+    // Cleans chunks from the ringbuffer if they are no longer in use
+    if (!handle || !handle->metadata) {
         errno = EINVAL;
         return false;
     }
+    chunk_buffer_t *chunks = &handle->chunks;
 
-    chunk_info_t* chunk = range->chunk;
-
-    // Decrement the reference count
-    uint32_t old_count = atomic_fetch_sub(&chunk->ref_count, 1);
-
-    // If this was the last reference and the chunk is unmappable, clean it up
-    if (old_count == 1 && atomic_load(&chunk->is_unmappable)) {
-        // Unmap the chunk
-        if (munmap(chunk->mapping, chunk->size) != 0) {
-            // I literally have no idea--this is very wrong
-            int* p = NULL;
-            *p = 0;  // crash and burn
+    while (true) {
+        size_t tail_index = atomic_load(&chunks->tail);
+        if (tail_index == atomic_load(&chunks->head)) {
+            // No chunks to clean
+            return true;
         }
 
-        // Safety check for handle->head
-        if (atomic_load(&handle->head) == NULL) {
-            // Something is wrong - inconsistent state
-            range->is_valid = false;
-            return true;  // Still return true to prevent caller from hanging
+        chunk_info_t *tail = chunks->buffer[tail_index];
+        if (!tail || tail == CHUNK_PENDING || atomic_load(&tail->ref_count) != 0) {
+            break;
         }
 
-        // Remove from the list - this is a complete traversal to ensure we clean up
-        // any chunk, not just the head
-        chunk_info_t* curr = atomic_load(&handle->head);
-        chunk_info_t* prev = NULL;
+        // Calculate the new tail position with wraparound
+        size_t new_tail_index = (tail_index + 1) % chunks->capacity;
 
-        while (curr) {
-            if (curr == chunk) {
-                // Found the chunk to remove
-                chunk_info_t* next = atomic_load(&curr->next);
-
-                if (prev) {
-                    // Not the head - update previous node's next pointer
-                    atomic_store(&prev->next, next);
-                } else {
-                    // This is the head - update the head pointer
-                    atomic_store(&handle->head, next);
-                }
-
-                // If this was the tail, update the tail pointer
-                if (atomic_load(&handle->tail) == chunk) {
-                    atomic_store(&handle->tail, prev);
-                }
-
-                atomic_fetch_sub(&handle->chunk_count, 1);
-                free(chunk);
-                break;
-            }
-
-            prev = curr;
-            curr = atomic_load(&curr->next);
+        // Attempt to update the tail index atomically
+        if (atomic_compare_exchange_strong(&chunks->tail, &tail_index, new_tail_index)) {
+            chunks->buffer[tail_index] = NULL;
+            munmap(tail->mapping, tail->size);
+            free(tail);
+            return true;
         }
     }
 
-    // Mark the range as invalid to prevent reuse
-    range->is_valid = false;
-
     return true;
+}
+
+
+bool mmlog_checkin(log_handle_t* handle, log_range_t* range)
+{
+}
+
+ uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
+{
+    uint64_t end = start + size;
+
+    // Calculate the chunk indices for the start and end positions
+    uint64_t start_chunk_index = start / chunk_size;
+    uint64_t end_chunk_index = end / chunk_size;
+
+    // Check if the request crosses two chunk boundaries
+    return end_chunk_index - start_chunk_index;
 }
 
 bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 {
     if (!handle || !data || size == 0) {
-        perror("Invalid arguments");
         errno = EINVAL;
         return false;
     }
 
-    size_t remaining_size = size;
-    const char* data_ptr = (const char*)data;
+    log_metadata_t *metadata = handle->metadata;
 
-    while (remaining_size > 0) {
-        // Check out a range for writing
-        log_range_t range = mmlog_checkout(handle, remaining_size);
-        if (!range.is_valid) {
-            perror("Failed to checkout range");
-            return false;
-        }
+    uint64_t cursor = mmlog_checkout(handle, size);
+    if (cursor == LOG_CURSOR_INVALID) {
+        return false;
+    }
 
-        // Calculate the size to copy in this iteration
-        size_t copy_size = range.end - range.start;
-        if (copy_size > remaining_size) {
-            copy_size = remaining_size;
-        }
+    // With this, we have a contiguous range to write to, but it needs to be in-memory for us to map it.  Consider a few scenarios
+    // 1. The data fits in a chunk (although it may cross up to one chunk boundary)--check/add to ringbuffer
+    // 2. The data crosses multiple chunks--just do a one-off mmap for this operation
+    if (mmlog_cross_count(cursor, size, metadata->chunk_size) > 1) {
+        // If we have more than one crossing, it means that the intermediate chunk is going to be used solely for this operation;
+        // so there is no point in using the ringbuffer--just map everything specifically for this operation
+    } else if () {
+        // If the span straddles a chunk in its entirety, then we also avoid using the ringbuffer
 
-        // Copy the data into the range
-        void* target = (char*)range.chunk->mapping + range.chunk_offset;
-        memcpy(target, data_ptr, copy_size);
-
-        // Update pointers and remaining size
-        data_ptr += copy_size;
-        remaining_size -= copy_size;
-
-        // Check the range back in
-        if (!mmlog_checkin(handle, &range)) {
-            perror("Failed to checkin range");
-            return false;
-        }
+    } else {
+        // If we have one or fewer crossings, then it's conceivable that multiple processes will be writing to the same chunk
     }
 
     return true;
