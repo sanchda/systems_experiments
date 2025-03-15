@@ -43,10 +43,11 @@ typedef struct chunk_info_t {
 } chunk_info_t;
 
 typedef struct {
-    chunk_info_t** buffer;  // Buffer for chunk_info_t (maybe make this configurable?)
-    size_t capacity;        // Capacity of the buffer
-    _Atomic size_t head;    // Where to put the next chunk (head is unavailable)
-    _Atomic size_t tail;    // Oldest chunk (tail is available)
+    _Atomic(chunk_info_t**) buffer;  // Buffer for chunk_info_t (maybe make this configurable?)
+    size_t capacity;                 // Capacity of the buffer
+    _Atomic(chunk_info_t **) head;   // Pointer to the current chunk (head is _not_ available)
+    _Atomic(chunk_info_t **) tail;   // Pointer to the next chunk (tail is available)
+    _Atomic bool head_locked;        // Lock for head advancement operations
 } chunk_buffer_t;
 
 // Process-local state
@@ -242,7 +243,7 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk
 
     // Allocate chunk buffer
     handle->chunks.capacity = chunk_count;
-    handle->chunks.buffer = (chunk_info_t**)calloc(chunk_count, sizeof(chunk_info_t*));
+    handle->chunks.buffer = (_Atomic(chunk_info_t *)*)calloc(chunk_count, sizeof(chunk_info_t*));
     if (!handle->chunks.buffer) {
         free(handle);
         return NULL;
@@ -327,7 +328,6 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
     return start;
 }
 
-
 bool mmlog_clean_chunks(log_handle_t *handle)
 {
     // Cleans chunks from the ringbuffer if they are no longer in use
@@ -338,35 +338,43 @@ bool mmlog_clean_chunks(log_handle_t *handle)
     chunk_buffer_t *chunks = &handle->chunks;
 
     while (true) {
-        size_t tail_index = atomic_load(&chunks->tail);
-        if (tail_index == atomic_load(&chunks->head)) {
+        // Get the current tail and head pointers atomically
+        chunk_info_t **tail_ptr = atomic_load(&chunks->tail);
+        chunk_info_t **head_ptr = atomic_load(&chunks->head);
+
+        // Check if buffer is empty
+        if (tail_ptr == head_ptr) {
             // No chunks to clean
             return true;
         }
 
-        chunk_info_t *tail = chunks->buffer[tail_index];
-        if (!tail || tail == CHUNK_PENDING || atomic_load(&tail->ref_count) != 0) {
-            break;
+        // Get the chunk at the tail position
+        chunk_info_t *tail_chunk = atomic_load((chunk_info_t* _Atomic *)tail_ptr);
+
+        // Check if chunk can be cleaned
+        if (!tail_chunk || tail_chunk == CHUNK_PENDING || atomic_load(&tail_chunk->ref_count) != 0) {
+            break;  // Can't clean this chunk, exit
         }
 
-        // Calculate the new tail position with wraparound
-        size_t new_tail_index = (tail_index + 1) % chunks->capacity;
+        // Calculate the next tail position with wraparound
+        ptrdiff_t tail_index = tail_ptr - chunks->buffer;
+        ptrdiff_t next_index = (tail_index + 1) % chunks->capacity;
+        chunk_info_t **next_tail_ptr = chunks->buffer + next_index;
 
-        // Attempt to update the tail index atomically
-        if (atomic_compare_exchange_strong(&chunks->tail, &tail_index, new_tail_index)) {
-            chunks->buffer[tail_index] = NULL;
-            munmap(tail->mapping, tail->size);
-            free(tail);
-            return true;
+        // Attempt to update the tail pointer atomically
+        if (atomic_compare_exchange_strong(&chunks->tail, &tail_ptr, next_tail_ptr)) {
+            // Success - clean up the chunk
+            atomic_store((chunk_info_t* _Atomic *)tail_ptr, NULL);
+            munmap(tail_chunk->mapping, tail_chunk->size);
+            free(tail_chunk);
+        } else {
+            // Failed to update tail pointer, another thread changed it
+            // Try again from the beginning
+            continue;
         }
     }
 
     return true;
-}
-
-
-bool mmlog_checkin(log_handle_t* handle, log_range_t* range)
-{
 }
 
  uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
@@ -376,9 +384,186 @@ bool mmlog_checkin(log_handle_t* handle, log_range_t* range)
     // Calculate the chunk indices for the start and end positions
     uint64_t start_chunk_index = start / chunk_size;
     uint64_t end_chunk_index = end / chunk_size;
-
-    // Check if the request crosses two chunk boundaries
     return end_chunk_index - start_chunk_index;
+}
+
+
+chunk_info_t *
+mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
+{
+    chunk_buffer_t *chunks = &handle->chunks;
+
+    // Have to do a few things
+    // 1. Check to see whether the active (head) chunk would satisfy the request
+    // 2. If so, incref and return
+    // 3. If not, try to allocate a new chunk and make it the active one
+    // If the ringbuffer is full, it's up to the caller to decide what to do
+
+    if (!chunks || !chunks->buffer) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    // First; get the current head pointer
+
+    {
+        bool expected = false;
+        int64_t start_time = ms_since_epoch_monotonic();
+        int64_t cur_time = start_time;
+        while (!atomic_compare_exchange_strong(&chunks->head_locked, &expected, true)) {
+            expected = false;
+            sched_yield();
+            cur_time = ms_since_epoch_monotonic();
+        }
+
+        if (!expected) {
+            errno = EAGAIN;
+            return NULL;
+        }
+    }
+
+    chunk_info_t **head_ptr = atomic_load(&chunks->head);
+    chunk_info_t **tail_ptr = atomic_load(&chunks->tail);
+
+    // Check the current head chunk
+    chunk_info_t *head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
+    if (!head_chunk) {
+        // Transition the head to PENDING
+        chunk_info_t* expected = NULL;
+        if (!atomic_compare_exchange_strong((chunk_info_t* _Atomic *)head_ptr, &expected, CHUNK_PENDING)) {
+            // CAS failed, someone else is updating
+            head_ptr = atomic_load(&chunks->head);
+            head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
+        }
+    }
+
+    // If there's no head chunk, create one
+    if (!head_chunk) {
+        // Create a new chunk
+        chunk_info_t *new_chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
+        if (!new_chunk) {
+            atomic_store((chunk_info_t* _Atomic *)head_ptr, NULL); // Clear PENDING
+            atomic_store(&chunks->head_locked, false);
+            return NULL;
+        }
+
+        // Initialize the chunk for this cursor position
+        new_chunk->start_offset = (cursor / handle->metadata->chunk_size) * handle->metadata->chunk_size;
+        new_chunk->size = handle->metadata->chunk_size;
+        new_chunk->mapping = mmap(NULL, new_chunk->size, PROT_READ | PROT_WRITE,
+                                MAP_SHARED, handle->data_fd, new_chunk->start_offset);
+        if (MAP_FAILED == new_chunk->mapping) {
+            free(new_chunk);
+            atomic_store((chunk_info_t* _Atomic *)head_ptr, NULL); // Clear PENDING
+            atomic_store(&chunks->head_locked, false);
+            return NULL;
+        }
+
+        atomic_store(&new_chunk->ref_count, 1);
+        atomic_store((chunk_info_t* _Atomic *)head_ptr, new_chunk);
+
+        // Advance head pointer
+        chunk_info_t **next_head_ptr = head_ptr + 1;
+        if (next_head_ptr >= chunks->buffer + chunks->capacity) {
+            next_head_ptr = chunks->buffer; // Wrap around
+        }
+        atomic_store(&chunks->head, next_head_ptr);
+
+        atomic_store(&chunks->head_locked, false);
+        return new_chunk;
+    }
+
+    // TODO do I unlock the head here?
+
+    // If head is PENDING, wait for it
+    if (head_chunk == CHUNK_PENDING) {
+        uint64_t start_time = ms_since_epoch_monotonic();
+        uint64_t cur_time = start_time;
+        bool is_ok = false;
+
+        while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
+            head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
+            if (head_chunk != CHUNK_PENDING) {
+                is_ok = true;
+                break;
+            }
+            sched_yield();
+            cur_time = ms_since_epoch_monotonic();
+        }
+
+        if (!is_ok) {
+            // Timed out waiting
+            return NULL;
+        }
+    }
+
+    // Check if current head chunk contains our cursor
+    if (head_chunk && head_chunk != CHUNK_PENDING) {
+        if (head_chunk->start_offset <= cursor && cursor < head_chunk->start_offset + head_chunk->size) {
+            atomic_fetch_add(&head_chunk->ref_count, 1);
+            return head_chunk;
+        }
+    }
+
+    // We need a new chunk - compute the next position
+    chunk_info_t **next_head_ptr = head_ptr + 1;
+    if (next_head_ptr >= chunks->buffer + chunks->capacity) {
+        next_head_ptr = chunks->buffer; // Wrap around
+    }
+
+    // Check if buffer is full
+    if (next_head_ptr == tail_ptr) {
+        // Try to clean chunks
+        mmlog_clean_chunks(handle);
+
+        // Check again
+        tail_ptr = atomic_load(&chunks->tail);
+        if (next_head_ptr == tail_ptr) {
+            errno = ENOSPC;
+            return NULL;
+        }
+    }
+
+    // Try to claim the next slot
+    chunk_info_t* expected = NULL;
+    if (!atomic_compare_exchange_strong((chunk_info_t* _Atomic *)next_head_ptr, &expected, CHUNK_PENDING)) {
+        // Someone else is using this slot
+        errno = EAGAIN;
+        return NULL;
+    }
+
+    // Create new chunk for the cursor
+    chunk_info_t *new_chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
+    if (!new_chunk) {
+        atomic_store((chunk_info_t* _Atomic *)next_head_ptr, NULL);
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    // Initialize the chunk
+    new_chunk->start_offset = (cursor / handle->metadata->chunk_size) * handle->metadata->chunk_size;
+    new_chunk->size = handle->metadata->chunk_size;
+    new_chunk->mapping = mmap(NULL, new_chunk->size, PROT_READ | PROT_WRITE,
+                            MAP_SHARED, handle->data_fd, new_chunk->start_offset);
+
+    if (MAP_FAILED == new_chunk->mapping) {
+        free(new_chunk);
+        atomic_store((chunk_info_t* _Atomic *)next_head_ptr, NULL);
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    atomic_store(&new_chunk->ref_count, 1);
+    atomic_store((chunk_info_t* _Atomic *)next_head_ptr, new_chunk);
+
+    // Advance head pointer
+    if (!atomic_compare_exchange_strong(&chunks->head, &head_ptr, next_head_ptr)) {
+        // This is unlikely but possible in extreme race conditions
+        // Our chunk is still valid, so we return it but set errno
+        errno = EAGAIN;
+    }
+
+    return new_chunk;
 }
 
 bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
@@ -397,16 +582,26 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 
     // With this, we have a contiguous range to write to, but it needs to be in-memory for us to map it.  Consider a few scenarios
     // 1. The data fits in a chunk (although it may cross up to one chunk boundary)--check/add to ringbuffer
-    // 2. The data crosses multiple chunks--just do a one-off mmap for this operation
-    if (mmlog_cross_count(cursor, size, metadata->chunk_size) > 1) {
-        // If we have more than one crossing, it means that the intermediate chunk is going to be used solely for this operation;
-        // so there is no point in using the ringbuffer--just map everything specifically for this operation
-    } else if () {
-        // If the span straddles a chunk in its entirety, then we also avoid using the ringbuffer
-
-    } else {
-        // If we have one or fewer crossings, then it's conceivable that multiple processes will be writing to the same chunk
+    // 2. The data crosses multiple chunks--just do a one-off mmap for this operation *OR* takes up exactly one chunk
+    uint32_t crossings = mmlog_cross_count(cursor, size, metadata->chunk_size);
+    if (crossings > 1 || size == metadata->chunk_size && (cursor % metadata->chunk_size) == 0) {
+        // - If we have more than one crossing, it means that the intermediate chunk is going to be used solely for this operation;
+        //   so there is no point in using the ringbuffer--just map everything specifically for this operation
+        // - If the span straddles a chunk in its entirety, then we also avoid using the ringbuffer
+        // Rather than hassling with mmap, let's just do a direct write to memory
+        ssize_t written = pwrite(handle->data_fd, data, size, cursor);
+        return size == pwrite(handle->data_fd, data, size, cursor);
     }
+
+    // If we're here, then we're in the normal case.
+    // So, we have at most two chunks, and very likely we have one chunk
+    if (0 == crossings) {
+        chunk_info_t* chunk = mmlog_rb_checkout(&handle->chunks, cursor);
+    } else {
+    }
+
+    // Check if we need to clean up chunks
+    mmlog_clean_chunks(handle); // ignore return for now
 
     return true;
 }
