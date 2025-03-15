@@ -22,7 +22,7 @@ int main()
 
     // Open log and write messages
     std::cout << "Writing messages to log...\n";
-    log_handle_t* handle = mmlog_open(filename.c_str(), chunk_size);
+    log_handle_t* handle = mmlog_open(filename.c_str(), chunk_size, 16);
     if (!handle) {
         std::cerr << "Failed to open log" << std::endl;
         return 1;
@@ -56,7 +56,7 @@ int main()
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    int found = 0;
+    size_t found = 0;
     for (const auto& msg : messages) {
         if (content.find(msg) != std::string::npos) {
             std::cout << "Found: " << msg << std::endl;
