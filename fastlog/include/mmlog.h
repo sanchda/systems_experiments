@@ -387,125 +387,147 @@ bool mmlog_clean_chunks(log_handle_t *handle)
     return end_chunk_index - start_chunk_index;
 }
 
+static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor) {
+    chunk_info_t *chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
+    if (!chunk) {
+        return NULL;
+    }
 
-chunk_info_t *
-mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
+    // Initialize the chunk for this cursor position
+    chunk->start_offset = (cursor / handle->metadata->chunk_size) * handle->metadata->chunk_size;
+    chunk->size = handle->metadata->chunk_size;
+    chunk->mapping = mmap(NULL, chunk->size, PROT_READ | PROT_WRITE,
+                         MAP_SHARED, handle->data_fd, chunk->start_offset);
+
+    if (MAP_FAILED == chunk->mapping) {
+        free(chunk);
+        return NULL;
+    }
+
+    atomic_store(&chunk->ref_count, 1);
+    return chunk;
+}
+
+// Helper to check if cursor is within chunk
+static bool is_cursor_in_chunk(const chunk_info_t* chunk, uint64_t cursor) {
+    return chunk &&
+           chunk != CHUNK_PENDING &&
+           chunk->start_offset <= cursor &&
+           cursor < chunk->start_offset + chunk->size;
+}
+
+// Helper to wait for a pending chunk to become ready
+static bool wait_for_pending_chunk(chunk_info_t* _Atomic *chunk_ptr) {
+    uint64_t start_time = ms_since_epoch_monotonic();
+    uint64_t cur_time = start_time;
+
+    while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
+        chunk_info_t* chunk = atomic_load(chunk_ptr);
+        if (chunk != CHUNK_PENDING) {
+            return true;
+        }
+        sched_yield();
+        cur_time = ms_since_epoch_monotonic();
+    }
+
+    return false;
+}
+
+// Helper to lock the head pointer
+static bool lock_head(chunk_buffer_t *chunks) {
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&chunks->head_locked, &expected, true)) {
+        return false;
+    }
+    return true;
+}
+
+// Helper to unlock the head pointer
+static void unlock_head(chunk_buffer_t *chunks) {
+    atomic_store(&chunks->head_locked, false);
+}
+
+chunk_info_t *mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 {
-    chunk_buffer_t *chunks = &handle->chunks;
-
-    // Have to do a few things
-    // 1. Check to see whether the active (head) chunk would satisfy the request
-    // 2. If so, incref and return
-    // 3. If not, try to allocate a new chunk and make it the active one
-    // If the ringbuffer is full, it's up to the caller to decide what to do
-
-    if (!chunks || !chunks->buffer) {
+    // Validate inputs
+    if (!handle || !handle->chunks.buffer) {
         errno = EINVAL;
         return NULL;
     }
 
-    // First; get the current head pointer
+    chunk_buffer_t *chunks = &handle->chunks;
 
-    {
-        bool expected = false;
-        int64_t start_time = ms_since_epoch_monotonic();
-        int64_t cur_time = start_time;
-        while (!atomic_compare_exchange_strong(&chunks->head_locked, &expected, true)) {
-            expected = false;
-            sched_yield();
-            cur_time = ms_since_epoch_monotonic();
-        }
-
-        if (!expected) {
-            errno = EAGAIN;
-            return NULL;
-        }
+    // Lock the head for initial operations
+    if (!lock_head(chunks)) {
+        errno = EAGAIN;
+        return NULL;
     }
 
+    // Get current head information
     chunk_info_t **head_ptr = atomic_load(&chunks->head);
     chunk_info_t **tail_ptr = atomic_load(&chunks->tail);
-
-    // Check the current head chunk
     chunk_info_t *head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
+
+    // If head is NULL, try to initialize it
     if (!head_chunk) {
-        // Transition the head to PENDING
+        // Try to mark as PENDING
         chunk_info_t* expected = NULL;
         if (!atomic_compare_exchange_strong((chunk_info_t* _Atomic *)head_ptr, &expected, CHUNK_PENDING)) {
-            // CAS failed, someone else is updating
+            // CAS failed, someone else is updating - re-fetch head
             head_ptr = atomic_load(&chunks->head);
             head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
+        } else {
+            // We've set it to PENDING, create a new chunk
+            chunk_info_t *new_chunk = create_chunk_at_cursor(handle, cursor);
+            if (!new_chunk) {
+                atomic_store((chunk_info_t* _Atomic *)head_ptr, NULL); // Clear PENDING
+                unlock_head(chunks);
+                return NULL;
+            }
+
+            // Store the new chunk and advance head pointer
+            atomic_store((chunk_info_t* _Atomic *)head_ptr, new_chunk);
+
+            chunk_info_t **next_head_ptr = head_ptr + 1;
+            if (next_head_ptr >= chunks->buffer + chunks->capacity) {
+                next_head_ptr = chunks->buffer; // Wrap around
+            }
+            atomic_store(&chunks->head, next_head_ptr);
+
+            unlock_head(chunks);
+            return new_chunk;
         }
     }
 
-    // If there's no head chunk, create one
-    if (!head_chunk) {
-        // Create a new chunk
-        chunk_info_t *new_chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
-        if (!new_chunk) {
-            atomic_store((chunk_info_t* _Atomic *)head_ptr, NULL); // Clear PENDING
-            atomic_store(&chunks->head_locked, false);
-            return NULL;
-        }
-
-        // Initialize the chunk for this cursor position
-        new_chunk->start_offset = (cursor / handle->metadata->chunk_size) * handle->metadata->chunk_size;
-        new_chunk->size = handle->metadata->chunk_size;
-        new_chunk->mapping = mmap(NULL, new_chunk->size, PROT_READ | PROT_WRITE,
-                                MAP_SHARED, handle->data_fd, new_chunk->start_offset);
-        if (MAP_FAILED == new_chunk->mapping) {
-            free(new_chunk);
-            atomic_store((chunk_info_t* _Atomic *)head_ptr, NULL); // Clear PENDING
-            atomic_store(&chunks->head_locked, false);
-            return NULL;
-        }
-
-        atomic_store(&new_chunk->ref_count, 1);
-        atomic_store((chunk_info_t* _Atomic *)head_ptr, new_chunk);
-
-        // Advance head pointer
-        chunk_info_t **next_head_ptr = head_ptr + 1;
-        if (next_head_ptr >= chunks->buffer + chunks->capacity) {
-            next_head_ptr = chunks->buffer; // Wrap around
-        }
-        atomic_store(&chunks->head, next_head_ptr);
-
-        atomic_store(&chunks->head_locked, false);
-        return new_chunk;
-    }
-
-    // TODO do I unlock the head here?
+    // Unlock the head - we don't need it while waiting or checking cursor
+    unlock_head(chunks);
 
     // If head is PENDING, wait for it
     if (head_chunk == CHUNK_PENDING) {
-        uint64_t start_time = ms_since_epoch_monotonic();
-        uint64_t cur_time = start_time;
-        bool is_ok = false;
-
-        while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
-            head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
-            if (head_chunk != CHUNK_PENDING) {
-                is_ok = true;
-                break;
-            }
-            sched_yield();
-            cur_time = ms_since_epoch_monotonic();
-        }
-
-        if (!is_ok) {
-            // Timed out waiting
+        if (!wait_for_pending_chunk((chunk_info_t* _Atomic *)head_ptr)) {
+            errno = ETIMEDOUT;
             return NULL;
         }
+        head_chunk = atomic_load((chunk_info_t* _Atomic *)head_ptr);
     }
 
     // Check if current head chunk contains our cursor
-    if (head_chunk && head_chunk != CHUNK_PENDING) {
-        if (head_chunk->start_offset <= cursor && cursor < head_chunk->start_offset + head_chunk->size) {
-            atomic_fetch_add(&head_chunk->ref_count, 1);
-            return head_chunk;
-        }
+    if (is_cursor_in_chunk(head_chunk, cursor)) {
+        atomic_fetch_add(&head_chunk->ref_count, 1);
+        return head_chunk;
     }
 
-    // We need a new chunk - compute the next position
+    // Need to create a new chunk - lock the head again
+    if (!lock_head(chunks)) {
+        errno = EAGAIN;
+        return NULL;
+    }
+
+    // Re-fetch pointers as they might have changed
+    head_ptr = atomic_load(&chunks->head);
+    tail_ptr = atomic_load(&chunks->tail);
+
+    // Calculate next head position
     chunk_info_t **next_head_ptr = head_ptr + 1;
     if (next_head_ptr >= chunks->buffer + chunks->capacity) {
         next_head_ptr = chunks->buffer; // Wrap around
@@ -513,12 +535,26 @@ mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 
     // Check if buffer is full
     if (next_head_ptr == tail_ptr) {
-        // Try to clean chunks
+        // Try to free up space
+        unlock_head(chunks);
         mmlog_clean_chunks(handle);
 
-        // Check again
+        // Lock and check again
+        if (!lock_head(chunks)) {
+            errno = EAGAIN;
+            return NULL;
+        }
+
+        // Re-fetch pointers
+        head_ptr = atomic_load(&chunks->head);
         tail_ptr = atomic_load(&chunks->tail);
+        next_head_ptr = head_ptr + 1;
+        if (next_head_ptr >= chunks->buffer + chunks->capacity) {
+            next_head_ptr = chunks->buffer;
+        }
+
         if (next_head_ptr == tail_ptr) {
+            unlock_head(chunks);
             errno = ENOSPC;
             return NULL;
         }
@@ -527,42 +563,31 @@ mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
     // Try to claim the next slot
     chunk_info_t* expected = NULL;
     if (!atomic_compare_exchange_strong((chunk_info_t* _Atomic *)next_head_ptr, &expected, CHUNK_PENDING)) {
-        // Someone else is using this slot
+        unlock_head(chunks);
         errno = EAGAIN;
         return NULL;
     }
 
     // Create new chunk for the cursor
-    chunk_info_t *new_chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
+    chunk_info_t *new_chunk = create_chunk_at_cursor(handle, cursor);
     if (!new_chunk) {
-        atomic_store((chunk_info_t* _Atomic *)next_head_ptr, NULL);
+        atomic_store((chunk_info_t* _Atomic *)next_head_ptr, NULL); // Clear PENDING
+        unlock_head(chunks);
         errno = ENOMEM;
         return NULL;
     }
 
-    // Initialize the chunk
-    new_chunk->start_offset = (cursor / handle->metadata->chunk_size) * handle->metadata->chunk_size;
-    new_chunk->size = handle->metadata->chunk_size;
-    new_chunk->mapping = mmap(NULL, new_chunk->size, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, handle->data_fd, new_chunk->start_offset);
-
-    if (MAP_FAILED == new_chunk->mapping) {
-        free(new_chunk);
-        atomic_store((chunk_info_t* _Atomic *)next_head_ptr, NULL);
-        errno = ENOMEM;
-        return NULL;
-    }
-
-    atomic_store(&new_chunk->ref_count, 1);
+    // Store the new chunk
     atomic_store((chunk_info_t* _Atomic *)next_head_ptr, new_chunk);
 
-    // Advance head pointer
+    // Try to advance head pointer
     if (!atomic_compare_exchange_strong(&chunks->head, &head_ptr, next_head_ptr)) {
         // This is unlikely but possible in extreme race conditions
         // Our chunk is still valid, so we return it but set errno
         errno = EAGAIN;
     }
 
+    unlock_head(chunks);
     return new_chunk;
 }
 
