@@ -134,6 +134,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     int64_t start_time = 0;
     int64_t cur_time = 0;
     log_metadata_t* metadata = NULL;
+
     if (-1 == fd_meta) {
         return false;
     }
@@ -193,6 +194,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
 files_open_cleanup:
     munmap(metadata, sizeof(log_metadata_t));
     close(fd_meta);
+    close(fd_data);
     return false;
 }
 
@@ -331,32 +333,42 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
     return start;
 }
 
-bool mmlog_clean_chunks(log_handle_t* handle)
+bool mmlog_clean_chunks(chunk_buffer_t* chunks)
 {
-    // Cleans chunks from the ringbuffer if they are no longer in use
-    if (!handle || !handle->metadata) {
+    // Attempts to clean up any unused chunks in the ring buffer, starting from the tail
+    // Chunks are unusued if they are not the head and their refcount is 0
+    // This type of property checking is done in a few steps
+    // 1. Atomic acquisition of the current tail
+    // 2. Verification that this snapshot has certain properties
+    // 3. "Take" the tail atomically via a CAS type operation
+    // 4. If successful, clean it up and repeat.
+    // 5. If not, then repeat anyway
+    // 6. Stop if the current tail cannot be cleaned (e.g., it is the head or it has a nonzero refcount)
+    if (!chunks || !chunks->buffer) {
         errno = EINVAL;
-        return false;
+        return false;  // Invalid chunk buffer
     }
-    chunk_buffer_t* chunks = &handle->chunks;
 
     while (true) {
         // Get the current tail and head pointers atomically
         chunk_info_t** tail_ptr = atomic_load(&chunks->tail);
         chunk_info_t** head_ptr = atomic_load(&chunks->head);
+        chunk_info_t* tail_chunk = *tail_ptr;
 
-        // Check if buffer is empty
+        // No matter what, if head==tail we don't have to clean anything up
         if (tail_ptr == head_ptr) {
             // No chunks to clean
             return true;
         }
 
         // Get the chunk at the tail position
-        chunk_info_t* tail_chunk = atomic_load((chunk_info_t * _Atomic*)tail_ptr);
+        if (!tail_chunk || tail_chunk == CHUNK_PENDING) {
+            break;  // No chunk to clean
+        }
 
         // Check if chunk can be cleaned
-        if (!tail_chunk || tail_chunk == CHUNK_PENDING || atomic_load(&tail_chunk->ref_count) != 0) {
-            break;  // Can't clean this chunk, exit
+        if (!tail_chunk->is_untracked && tail_chunk->ref_count > 1) {
+            break;  // Also no chunk to clean
         }
 
         // Calculate the next tail position with wraparound
@@ -367,7 +379,6 @@ bool mmlog_clean_chunks(log_handle_t* handle)
         // Attempt to update the tail pointer atomically
         if (atomic_compare_exchange_strong(&chunks->tail, &tail_ptr, next_tail_ptr)) {
             // Success - clean up the chunk
-            atomic_store((chunk_info_t * _Atomic*)tail_ptr, NULL);
             munmap(tail_chunk->mapping, tail_chunk->size);
             free(tail_chunk);
         } else {
@@ -505,7 +516,7 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
     if (next_head_ptr == tail_ptr) {
         // Temporarily release lock to clean up
         unlock_head(chunks);
-        mmlog_clean_chunks(handle);
+        mmlog_clean_chunks(&handle->chunks);
 
         // Re-acquire lock and reload pointers
         if (!lock_head(chunks)) {
@@ -700,7 +711,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
     }
 
     // Check if we need to clean up chunks
-    mmlog_clean_chunks(handle);
+    mmlog_clean_chunks(&handle->chunks);
 
     return true;
 }
