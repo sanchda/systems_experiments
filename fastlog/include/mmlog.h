@@ -83,9 +83,23 @@ int64_t ms_since_epoch_monotonic(void)
     return (int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec / 1000000;
 }
 
+static inline bool hot_wait_for_cond(bool (*fun)(void*), void* arg, int64_t timeout_ms)
+{
+    int64_t start_time = ms_since_epoch_monotonic();
+    int64_t cur_time = start_time;
+    while (cur_time - start_time < timeout_ms) {
+        if (fun(arg)) {
+            return true;
+        }
+        sched_yield();
+        cur_time = ms_since_epoch_monotonic();
+    }
+    return false;
+}
+
 bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
-    log_metadata_t* metadata;
+    log_metadata_t* metadata = NULL;
     int fd_data = -1;
     if (-1 == ftruncate(fd_meta, sizeof(log_metadata_t))) {
         goto files_create_cleanup;
@@ -109,79 +123,90 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
         goto files_create_cleanup;
     }
 
-    (void)ftruncate(fd_data, 0);  // zero out the file, probably
-    if (-1 == ftruncate(fd_data, metadata->chunk_size)) {
+    // Zero + init the data file and init the metadata file
+    if (-1 == ftruncate(fd_data, 0) || -1 == ftruncate(fd_data, chunk_size) ||
+        -1 == ftruncate(fd_meta, sizeof(log_metadata_t))) {
         goto files_create_cleanup;
     }
 
-    atomic_store(&metadata->file_size, chunk_size);
-    atomic_store(&metadata->is_ready, true);
     handle->metadata = metadata;
     handle->data_fd = fd_data;
     handle->metadata_fd = fd_meta;
+    atomic_store(&metadata->file_size, chunk_size);
+    atomic_store(&metadata->is_ready, true);
     return true;
 
 files_create_cleanup:
-    munmap(metadata, sizeof(log_metadata_t));
-    close(fd_data);
+    if (metadata && metadata != MAP_FAILED) {
+        if (-1 == munmap(metadata, sizeof(log_metadata_t))) {
+            // Nothing to do here
+        }
+    }
+    if (-1 != fd_data) {
+        close(fd_data);
+    }
     return false;
+}
+
+typedef struct {
+    int* fd;
+    const char* filename;
+    size_t size;
+} try_check_file_ready_args_t;
+
+static inline bool try_check_file_ready(void* args)
+{
+    try_check_file_ready_args_t* m = (try_check_file_ready_args_t*)args;
+    int* fd = m->fd;
+    size_t size = m->size;
+    const char* filename = m->filename;
+    if (-1 == *fd) {
+        *fd = open(filename, O_RDWR);
+        if (-1 == *fd) {
+            return false;
+        }
+    }
+    struct stat st;
+    if (fstat(*fd, &st) != 0 || (size_t)st.st_size < size) {
+        return false;
+    }
+    return true;
+}
+
+static inline bool try_check_metadata_ready(void* args)
+{
+    log_metadata_t* metadata = (log_metadata_t*)args;
+    return atomic_load(&metadata->is_ready);
 }
 
 bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
 {
-    int fd_meta = open(meta_filename, O_RDWR);
+    int fd_meta = -1;
     int fd_data = -1;
-    int64_t start_time = 0;
-    int64_t cur_time = 0;
     log_metadata_t* metadata = NULL;
-
-    if (-1 == fd_meta) {
-        return false;
-    }
 
     // Before we mmap the metadata, check the file size.  If it's nonzero, but less than the size of the metadata, it's
     // probable that we have an incompatible metadata version--so bail out
-    int retries = 3;
-    bool is_ok = false;
-    while (--retries) {
-        struct stat st;
-        if (fstat(fd_meta, &st) != 0 || (size_t)st.st_size < sizeof(log_metadata_t)) {
-            continue;
-        }
-        is_ok = true;
-        break;
-    }
-
-    if (!is_ok) {
+    try_check_file_ready_args_t fd_meta_args = {&fd_meta, meta_filename, sizeof(log_metadata_t)};
+    if (!hot_wait_for_cond(try_check_file_ready, &fd_meta_args, SLEEP_TIME_MAX_MS)) {
         goto files_open_cleanup;
     }
 
-    // Nothing is valid until we've mapped the metadata
+    // Nothing is valid until we've mapped the metadata (above check ensures the metadata file is at least as big as we
+    // need)
     metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
     if (MAP_FAILED == metadata || metadata->version != MMLOG_VERSION) {
         goto files_open_cleanup;
     }
 
     // Sit in a try-sleep loop for checking readiness
-    start_time = ms_since_epoch_monotonic();
-    cur_time = start_time;
-    is_ok = false;
-    while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
-        if (atomic_load(&metadata->is_ready)) {
-            is_ok = true;
-            break;
-        }
-        sched_yield();
-        cur_time = ms_since_epoch_monotonic();
-    }
-
-    if (!is_ok) {
+    if (!hot_wait_for_cond(try_check_metadata_ready, metadata, SLEEP_TIME_MAX_MS)) {
         goto files_open_cleanup;
     }
 
     // Finally, we have to open the data file
-    fd_data = open(filename, O_RDWR);
-    if (-1 == fd_data) {
+    try_check_file_ready_args_t fd_data_args = {&fd_data, filename, metadata->chunk_size};
+    if (!hot_wait_for_cond(try_check_file_ready, &fd_data_args, SLEEP_TIME_MAX_MS)) {
         goto files_open_cleanup;
     }
 
@@ -192,9 +217,16 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     return true;
 
 files_open_cleanup:
+    if (metadata && MAP_FAILED != metadata) {
+        munmap(metadata, sizeof(log_metadata_t));
+    }
     munmap(metadata, sizeof(log_metadata_t));
-    close(fd_meta);
-    close(fd_data);
+    if (-1 != fd_data) {
+        close(fd_data);
+    }
+    if (-1 != fd_meta) {
+        close(fd_meta);
+    }
     return false;
 }
 
@@ -228,14 +260,17 @@ bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_
 
 files_open_or_create_cleanup:
     free(meta_filename);
-    close(fd_meta);
+    if (-1 != fd_meta) {
+        close(fd_meta);
+    }
     return false;
 }
 
 log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk_count)
 {
     // Validate chunk size (must be multiple of page size)
-    if (chunk_size % LOG_PAGE_SIZE != 0 || chunk_size == 0 || chunk_count == 0) {
+    // Validate chunk count (ringbuffer can't have just one entry)
+    if (chunk_size % LOG_PAGE_SIZE != 0 || chunk_size == 0 || chunk_count < 2) {
         errno = EINVAL;
         return NULL;
     }
@@ -267,47 +302,59 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk
     return handle;
 }
 
-bool data_file_expand(log_handle_t* handle, uint64_t end)
+typedef struct {
+    log_handle_t* handle;
+    uint64_t end;
+} file_expand_args_t;
+
+static inline bool file_expand_inner(void* arg)
 {
+    file_expand_args_t* args = (file_expand_args_t*)arg;
+    log_handle_t* handle = args->handle;
+    uint64_t end = args->end;
     log_metadata_t* metadata = handle->metadata;
-    bool expected = false;
 
-    int64_t start_time = ms_since_epoch_monotonic();
-    int64_t cur_time = start_time;
-    while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
-        if (atomic_load(&metadata->is_panicked)) {
-            return false;
-        }
-
-        if (atomic_compare_exchange_strong(&metadata->is_locked, &expected, true)) {
-            uint64_t file_size = atomic_load(&metadata->file_size);
-            if (file_size < end) {
-                uint64_t new_size = ALIGN(end, metadata->chunk_size);
-                if (-1 == ftruncate(handle->data_fd, new_size)) {
-                    // Whoa, we can't ftruncate!  Everything sucks!
-                    atomic_store(&metadata->is_panicked, true);
-                    atomic_store(&metadata->is_locked, false);
-                    return false;
-                }
-                atomic_store(&metadata->file_size, new_size);
-                atomic_store(&metadata->is_locked, false);
-                file_size = new_size;
-                return true;
-            }
-        } else {
-            // Can't take the lock, which probably means someone else has it
-            // Let's try again later
-            sched_yield();
-            uint64_t file_size = atomic_load(&metadata->file_size);
-            if (file_size >= end) {
-                return true;
-            }
-        }
-
-        cur_time = ms_since_epoch_monotonic();
+    if (atomic_load(&metadata->is_panicked)) {
+        // Unfortunate, but we'll probably end up retrying in this condition
+        // TODO fence this properly or create an early escape enum or something
+        return false;
     }
 
-    // If we're here, then we timed out
+    bool expected = false;
+    if (atomic_compare_exchange_strong(&metadata->is_locked, &expected, true)) {
+        uint64_t file_size = atomic_load(&metadata->file_size);
+        if (file_size < end) {
+            // Need to expand
+            uint64_t new_size = ALIGN(end, metadata->chunk_size);
+            if (-1 == ftruncate(handle->data_fd, new_size)) {
+                // Whoa, we can't ftruncate!  Everything sucks!
+                atomic_store(&metadata->is_panicked, true);
+                atomic_store(&metadata->is_locked, false);
+                return true;  // Bails out, but we we need to check in the caller
+            }
+
+            // Expanded, update metadata
+            atomic_store(&metadata->file_size, new_size);
+            atomic_store(&metadata->is_locked, false);
+            file_size = new_size;
+            return true;
+        }
+
+        // release the lock--filesize is fine
+        atomic_store(&metadata->is_locked, false);
+        return true;
+    }
+
+    // Couldn't take the lock, so retry
+    return false;
+}
+
+bool data_file_expand(log_handle_t* handle, uint64_t end)
+{
+    file_expand_args_t args = {handle, end};
+    if (hot_wait_for_cond(file_expand_inner, &args, SLEEP_TIME_MAX_MS)) {
+        return !atomic_load(&handle->metadata->is_panicked);
+    }
     return false;
 }
 
@@ -353,6 +400,11 @@ bool mmlog_clean_chunks(chunk_buffer_t* chunks)
         // Get the current tail and head pointers atomically
         chunk_info_t** tail_ptr = atomic_load(&chunks->tail);
         chunk_info_t** head_ptr = atomic_load(&chunks->head);
+
+        // If there's no tail, we're done here
+        if (!tail_ptr) {
+            break;  // No tail to clean
+        }
         chunk_info_t* tail_chunk = *tail_ptr;
 
         // No matter what, if head==tail we don't have to clean anything up
@@ -429,29 +481,17 @@ static bool is_cursor_in_chunk(const chunk_info_t* chunk, uint64_t cursor)
            cursor < chunk->start_offset + chunk->size;
 }
 
-// Helper to wait for a pending chunk to become ready
-static bool wait_for_pending_chunk(chunk_info_t* _Atomic* chunk_ptr)
+static inline bool lock_head_inner(void* args)
 {
-    uint64_t start_time = ms_since_epoch_monotonic();
-    uint64_t cur_time = start_time;
-
-    while (cur_time - start_time < SLEEP_TIME_MAX_MS) {
-        chunk_info_t* chunk = atomic_load(chunk_ptr);
-        if (chunk != CHUNK_PENDING) {
-            return true;
-        }
-        sched_yield();
-        cur_time = ms_since_epoch_monotonic();
-    }
-
-    return false;
+    chunk_buffer_t* chunks = (chunk_buffer_t*)args;
+    bool expected = false;
+    return atomic_compare_exchange_strong(&chunks->head_locked, &expected, true);
 }
 
 // Helper to lock the head pointer
-static bool lock_head(chunk_buffer_t* chunks)
+static inline bool lock_head(chunk_buffer_t* chunks)
 {
-    bool expected = false;
-    return atomic_compare_exchange_strong(&chunks->head_locked, &expected, true);
+    return hot_wait_for_cond(lock_head_inner, chunks, SLEEP_TIME_MAX_MS);
 }
 
 // Helper to unlock the head pointer
@@ -460,43 +500,10 @@ static void unlock_head(chunk_buffer_t* chunks)
     atomic_store(&chunks->head_locked, false);
 }
 
-// Helper function to handle uninitialized buffer
-static chunk_info_t*
-handle_uninitialized_buffer(log_handle_t* handle, chunk_buffer_t* chunks, chunk_info_t** head_ptr, uint64_t cursor)
+// Fiddly arithmetic goes into a helper
+static inline chunk_info_t** get_next_head_ptr(chunk_buffer_t* chunks, chunk_info_t** head_ptr)
 {
-    // Check if head_ptr is NULL
-    if (!head_ptr) {
-        errno = EINVAL;
-        return NULL;
-    }
-
-    // Mark head as pending
-    // TODO this cast is ugly and probably wrong?
-    chunk_info_t* expected = NULL;
-    if (!atomic_compare_exchange_strong((chunk_info_t * _Atomic*)head_ptr, &expected, CHUNK_PENDING)) {
-        // CAS failed, someone else is updating - return NULL and let caller retry
-        errno = EAGAIN;
-        return NULL;
-    }
-
-    // Create new chunk at cursor
-    chunk_info_t* new_chunk = create_chunk_at_cursor(handle, cursor);
-    if (!new_chunk) {
-        atomic_store((chunk_info_t * _Atomic*)head_ptr, NULL);  // Clear PENDING
-        errno = ENOMEM;
-        return NULL;
-    }
-
-    // Store new chunk and advance head pointer atomically
-    atomic_store((chunk_info_t * _Atomic*)head_ptr, new_chunk);
-
-    chunk_info_t** next_head_ptr = head_ptr + 1;
-    if (next_head_ptr >= chunks->buffer + chunks->capacity) {
-        next_head_ptr = chunks->buffer;  // Wrap around
-    }
-    atomic_store(&chunks->head, next_head_ptr);
-
-    return new_chunk;
+    return chunks->buffer + ((head_ptr - chunks->buffer + 1) % chunks->capacity);
 }
 
 // Helper function to add a new chunk
@@ -506,31 +513,26 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
                                    chunk_info_t** tail_ptr,
                                    uint64_t cursor)
 {
+    // Check if head_ptr is NULL
+    if (!head_ptr) {
+        errno = EINVAL;
+        return NULL;
+    }
+
     // Calculate next head position
-    chunk_info_t** next_head_ptr = head_ptr + 1;
+    chunk_info_t** next_head_ptr = get_next_head_ptr(chunks, head_ptr);
     if (next_head_ptr >= chunks->buffer + chunks->capacity) {
         next_head_ptr = chunks->buffer;  // Wrap around
     }
 
-    // Check if buffer is full
+    // Check if buffer is full, retry _one_ time
     if (next_head_ptr == tail_ptr) {
-        // Temporarily release lock to clean up
-        unlock_head(chunks);
         mmlog_clean_chunks(&handle->chunks);
-
-        // Re-acquire lock and reload pointers
-        if (!lock_head(chunks)) {
-            errno = EAGAIN;
-            return NULL;
-        }
 
         // Recalculate next head position with updated pointers
         head_ptr = atomic_load(&chunks->head);
         tail_ptr = atomic_load(&chunks->tail);
-        next_head_ptr = head_ptr + 1;
-        if (next_head_ptr >= chunks->buffer + chunks->capacity) {
-            next_head_ptr = chunks->buffer;
-        }
+        next_head_ptr = get_next_head_ptr(chunks, head_ptr);
 
         if (next_head_ptr == tail_ptr) {
             errno = ENOSPC;
@@ -538,16 +540,11 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
         }
     }
 
-    // Mark next slot as pending
-    chunk_info_t* expected = NULL;
-    if (!atomic_compare_exchange_strong((chunk_info_t * _Atomic*)next_head_ptr, &expected, CHUNK_PENDING)) {
-        errno = EAGAIN;
-        return NULL;
-    }
-
     // Create new chunk
     chunk_info_t* new_chunk = create_chunk_at_cursor(handle, cursor);
     if (!new_chunk) {
+        // Unmark the pending chunk; I guess this might create churn as other writers try the same thing
+        // TODO: probably a global failure state, like our panic state
         atomic_store((chunk_info_t * _Atomic*)next_head_ptr, NULL);
         errno = ENOMEM;
         return NULL;
@@ -556,10 +553,9 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
     // Store new chunk
     atomic_store((chunk_info_t * _Atomic*)next_head_ptr, new_chunk);
 
-    // Advance head pointer - if this fails, log a warning but return the chunk
+    // Advance head pointer
     if (!atomic_compare_exchange_strong(&chunks->head, &head_ptr, next_head_ptr)) {
-        // This is a rare race condition - the chunk is valid, but head wasn't updated
-        // We should log this situation but return success
+        // This should _never_ happen because the caller has the head lock
     }
 
     return new_chunk;
@@ -574,9 +570,9 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
     }
 
     chunk_buffer_t* chunks = &handle->chunks;
-    chunk_info_t* result = NULL;
 
     // Try to find an existing chunk with our cursor first (no lock needed)
+    // This is a fast path for the common case where the cursor is in the current chunk
     chunk_info_t** head_ptr = atomic_load(&chunks->head);
     if (head_ptr && *head_ptr != NULL && *head_ptr != CHUNK_PENDING) {
         chunk_info_t* head_chunk = atomic_load((chunk_info_t * _Atomic*)head_ptr);
@@ -594,55 +590,18 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 
     // Reload pointers after acquiring lock
     head_ptr = atomic_load(&chunks->head);
+    if (!head_ptr) {
+        head_ptr = chunks->buffer;  // Initialize head pointer if NULL
+    }
     chunk_info_t** tail_ptr = atomic_load(&chunks->tail);
-    chunk_info_t* head_chunk = NULL;
-
-    // Check for uninitialized buffer case
-    if (head_ptr == NULL) {
-        // Initialize head_ptr to point to the first element of the buffer if it's NULL
-        head_ptr = chunks->buffer;
-        atomic_store(&chunks->head, head_ptr);
-        atomic_store(&chunks->tail, head_ptr);
-    }
-
-    if (atomic_load((_Atomic(chunk_info_t*)*)head_ptr) == NULL) {
-        result = handle_uninitialized_buffer(handle, chunks, head_ptr, cursor);
-        goto mmlog_rb_checkout_cleanup;
-    }
-
-    // Handle pending chunk case (wait for another thread to complete initialization)
-    head_chunk = atomic_load((chunk_info_t * _Atomic*)head_ptr);
-    if (head_chunk == CHUNK_PENDING) {
-        // Temporarily release lock while waiting
+    chunk_info_t* head_chunk = add_new_chunk(handle, chunks, head_ptr, tail_ptr, cursor);
+    if (!head_chunk) {
         unlock_head(chunks);
-        if (!wait_for_pending_chunk((chunk_info_t * _Atomic*)head_ptr)) {
-            errno = ETIMEDOUT;
-            return NULL;
-        }
-
-        // Re-acquire lock and reload head
-        if (!lock_head(chunks)) {
-            errno = EAGAIN;
-            return NULL;
-        }
-        head_ptr = atomic_load(&chunks->head);
-        head_chunk = atomic_load((chunk_info_t * _Atomic*)head_ptr);
-        tail_ptr = atomic_load(&chunks->tail);
+        return NULL;  // Failed to add new chunk
     }
-
-    // Check again if head contains our cursor after potential changes
-    if (is_cursor_in_chunk(head_chunk, cursor)) {
-        atomic_fetch_add(&head_chunk->ref_count, 1);
-        result = head_chunk;
-        goto mmlog_rb_checkout_cleanup;
-    }
-
-    // We need to add a new chunk - calculate next head position
-    result = add_new_chunk(handle, chunks, head_ptr, tail_ptr, cursor);
-
-mmlog_rb_checkout_cleanup:
     unlock_head(chunks);
-    return result;
+    atomic_fetch_add(&head_chunk->ref_count, 1);
+    return head_chunk;
 }
 
 static bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* data, size_t size)
@@ -725,5 +684,10 @@ void mmlog_trim(log_handle_t* handle)
 
     log_metadata_t* metadata = handle->metadata;
     uint64_t cursor = atomic_load(&metadata->cursor);
-    ftruncate(handle->data_fd, cursor);
+    if (-1 == ftruncate(handle->data_fd, cursor)) {
+        // Technically this is a failure, but I have no idea what to do since this is like an optional validation nobody
+        // asked for
+    }
 }
+
+#undef SLEEP_TIME_MAX_MS

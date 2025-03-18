@@ -37,10 +37,32 @@ target_link_libraries(vm_reader
     PRIVATE mmlog
 )
 
+# Forks example
+add_executable(forks eg/forks/src/main.c)
+target_compile_options(forks PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(forks
+    PRIVATE include
+    PRIVATE eg/vm_reader/include
+)
+target_link_libraries(forks
+    PRIVATE mmlog
+)
+
+# Threads example
+add_executable(threads eg/threads/src/main.c)
+target_compile_options(threads PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(threads
+    PRIVATE include
+    PRIVATE eg/vm_reader/include
+)
+target_link_libraries(threads
+    PRIVATE mmlog
+)
+
 # Finally, let's make sure we save the compile_commands.json
-#add_custom_command(
-#    TARGET ${PROJECT_NAME} POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-#        ${CMAKE_BINARY_DIR}/compile_commands.json
-#        ${CMAKE_SOURCE_DIR}/compile_commands.json
-#)
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_BINARY_DIR}/compile_commands.json
+        ${CMAKE_SOURCE_DIR}/compile_commands.json
+)

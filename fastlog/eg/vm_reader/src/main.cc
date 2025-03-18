@@ -43,6 +43,7 @@ int main()
     }
 
     // Clean up and close
+    mmlog_trim(handle);
     free(handle);
 
     // Read file back and validate
