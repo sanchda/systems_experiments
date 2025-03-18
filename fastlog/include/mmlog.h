@@ -133,7 +133,7 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
     handle->data_fd = fd_data;
     handle->metadata_fd = fd_meta;
     atomic_store(&metadata->file_size, chunk_size);
-    atomic_store(&metadata->is_ready, true);
+    atomic_store_explicit(&metadata->is_ready, true, memory_order_release);
     return true;
 
 files_create_cleanup:
@@ -167,7 +167,7 @@ static inline bool try_check_file_ready(void* args)
         }
     }
     struct stat st;
-    if (fstat(*fd, &st) != 0 || (size_t)st.st_size < size) {
+    if (0 != fstat(*fd, &st) || (size_t)st.st_size < size) {
         return false;
     }
     return true;
@@ -176,7 +176,7 @@ static inline bool try_check_file_ready(void* args)
 static inline bool try_check_metadata_ready(void* args)
 {
     log_metadata_t* metadata = (log_metadata_t*)args;
-    return atomic_load(&metadata->is_ready);
+    return atomic_load_explicit(&metadata->is_ready, memory_order_acquire);
 }
 
 bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
@@ -195,12 +195,18 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     // Nothing is valid until we've mapped the metadata (above check ensures the metadata file is at least as big as we
     // need)
     metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
-    if (MAP_FAILED == metadata || metadata->version != MMLOG_VERSION) {
+    if (MAP_FAILED == metadata) {
         goto files_open_cleanup;
     }
 
     // Sit in a try-sleep loop for checking readiness
     if (!hot_wait_for_cond(try_check_metadata_ready, metadata, SLEEP_TIME_MAX_MS)) {
+        goto files_open_cleanup;
+    }
+
+    // If the version is not compatible, we can't use this log
+    if (metadata->version != MMLOG_VERSION) {
+        errno = EINVAL;
         goto files_open_cleanup;
     }
 
@@ -220,7 +226,6 @@ files_open_cleanup:
     if (metadata && MAP_FAILED != metadata) {
         munmap(metadata, sizeof(log_metadata_t));
     }
-    munmap(metadata, sizeof(log_metadata_t));
     if (-1 != fd_data) {
         close(fd_data);
     }
@@ -245,6 +250,8 @@ bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_
     }
 
     // Try to create metadata file (exclusive create)
+    // NOTE: we never `unlink()` this file, so some error conditions can cause an orphaned metadata file.
+    //       TODO: can we do better?  Difficult if ftruncate fails
     fd_meta = open(meta_filename, O_RDWR | O_CREAT | O_EXCL, 0644);
     if (-1 == fd_meta) {
         if (!files_open(filename, meta_filename, handle)) {
