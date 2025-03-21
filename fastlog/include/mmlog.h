@@ -74,6 +74,37 @@ typedef struct {
 // Sentinel value for chunk in intermediate state
 #define CHUNK_PENDING (chunk_info_t*)1
 
+// X macro for error codes
+#define ERR_TABLE(X) \
+    X(OK, "mmlog success") \
+    X(CLOCK_ERR, "[ms_since_epoch] error in gettimeofday()") \
+    X(_LENGTH, "UNKNOWN ERROR")
+
+// Error codes
+#define ERR_CODE(code, str) MMLOG_ERR_##code,
+typedef enum {
+    ERR_TABLE(ERR_CODE)  // Generate error codes from the table
+} mmlog_err_t;
+#undef ERR_CODE
+
+// Error messages
+#define ERR_MSG(code, str) [MMLOG_ERR_##code] = str,
+static const char* mmlog_err_msg[] = {
+    ERR_TABLE(ERR_MSG)  // Generate error messages from the table
+};
+#undef ERR_MSG
+
+const char * mmlog_strerror(mmlog_err_t err)
+{
+    err = (err < 0 || err >= MMLOG_ERR__LENGTH) ? MMLOG_ERR__LENGTH : err;  // Clamp to valid range
+    return mmlog_err_msg[err];
+}
+
+mmlog_err_t mmlog_errno = MMLOG_ERR_OK;
+const char * mmlog_strerror_cur() {
+    return mmlog_strerror(errno);
+}
+
 int64_t ms_since_epoch_monotonic(void)
 {
     struct timespec ts;

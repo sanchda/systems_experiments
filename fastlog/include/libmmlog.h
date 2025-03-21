@@ -19,4 +19,6 @@ typedef struct log_range_t log_range_t;
 EXTERN_C log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t max_chunks);
 EXTERN_C bool mmlog_insert(log_handle_t* handle, const void* data, size_t size);
 EXTERN_C void mmlog_trim(log_handle_t* handle);
+EXTERN_C const char* mmlog_strerror(int err);
+EXTERN_C const char* mmlog_strerror_cur(void);
 #undef EXTERN_C
