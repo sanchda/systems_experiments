@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -9,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdatomic.h>  // Added for atomic operations
 
 #include "libmmlog.h"
 
@@ -17,6 +17,10 @@
 #define MAX_MESSAGE_SIZE 512
 #define CHUNK_SIZE (4 * 4096)  // 16KB chunks
 #define NUM_CHUNKS 16
+
+// Global atomic sequence counter
+atomic_int global_seq_counter = 0;
+atomic_int global_msg_counter = 0;
 
 // Random message generation
 static const char* word_list[] = {
@@ -42,12 +46,12 @@ typedef struct {
 } worker_info_t;
 
 // Generate a random message
-void generate_random_message(char* buffer, size_t max_size, int thread_id) {
+size_t generate_random_message(char* buffer, size_t max_size, int seq_num, int thread_id) {
     int word_count = 3 + rand() % 8;  // 3 to 10 words
     size_t pos = 0;
 
     // Thread ID and timestamp prefix for identification
-    pos += snprintf(buffer + pos, max_size - pos, "[THR %d] [%ld] ", thread_id, time(NULL));
+    pos += snprintf(buffer + pos, max_size - pos, " [SEQ %d] [THR %d] [%ld] ", seq_num, thread_id, time(NULL));
 
     for (int i = 0; i < word_count && pos < max_size - 1; i++) {
         const char* word = word_list[rand() % NUM_WORDS];
@@ -55,7 +59,10 @@ void generate_random_message(char* buffer, size_t max_size, int thread_id) {
     }
 
     // Ensure null termination
+    buffer[pos] = '\n';
+    pos++;
     buffer[pos] = '\0';
+    return pos;
 }
 
 // Thread worker function
@@ -71,7 +78,7 @@ void* thread_worker(void* arg) {
     // duplicate all of our accounting overhead.
     log_handle_t* handle = mmlog_open(args->log_filename, CHUNK_SIZE, NUM_CHUNKS);
     if (!handle) {
-        fprintf(stderr, "Thread %d: Failed to open log: %s\n", args->thread_num, strerror(errno));
+        fprintf(stderr, "Thread %d: Failed to open log: %s\n", args->thread_num, mmlog_strerror_cur());
         args->success = false;
         return NULL;
     }
@@ -81,37 +88,22 @@ void* thread_worker(void* arg) {
     char message[MAX_MESSAGE_SIZE];
 
     for (int i = 0; i < MESSAGES_PER_THREAD; i++) {
-        generate_random_message(message, sizeof(message), args->thread_num);
-        size_t msg_len = strlen(message);
-
-        // Add a newline for readability in validation
-        message[msg_len] = '\n';
-        msg_len++;
-        message[msg_len] = '\0';
-
-        // Store the sequence number in the message for validation
-        char seq_info[32];
-        snprintf(seq_info, sizeof(seq_info), " [SEQ %d]", i);
-        strcat(message, seq_info);
-        msg_len = strlen(message);
+        int seq_num = atomic_fetch_add(&global_seq_counter, 1);
+        size_t msg_len = generate_random_message(message, sizeof(message), seq_num, args->thread_num);
 
         if (!mmlog_insert(handle, message, msg_len)) {
             fprintf(stderr, "Thread %d: Failed to insert message %d: %s\n",
-                    args->thread_num, i, strerror(errno));
+                    args->thread_num, i, mmlog_strerror_cur());
             free(handle);
             args->success = false;
             return NULL;
         }
-
+        atomic_fetch_add(&global_seq_counter, 1);
         args->messages_written++;
-
-        // Add some random delays to increase contention chances
-        if (rand() % 20 == 0) {
-            usleep(rand() % 500);  // 0-0.5ms delay
-        }
     }
 
     // Clean up
+    mmlog_trim(handle);
     free(handle);
     args->success = true;
     return NULL;
@@ -131,6 +123,18 @@ bool validate_log(const char* log_filename, int expected_total_messages) {
     int thread_message_counts[NUM_THREADS] = {0};
     char buffer[MAX_MESSAGE_SIZE];
 
+    // Track sequence numbers for validation
+    bool* seen_sequences = calloc(expected_total_messages, sizeof(bool));
+    if (!seen_sequences) {
+        perror("Failed to allocate sequence tracking array");
+        fclose(file);
+        return false;
+    }
+
+    int duplicate_sequences = 0;
+    int missing_sequences = 0;
+    int max_sequence = -1;
+
     while (fgets(buffer, sizeof(buffer), file) != NULL) {
         line_count++;
 
@@ -148,12 +152,41 @@ bool validate_log(const char* log_filename, int expected_total_messages) {
         } else {
             fprintf(stderr, "Invalid log line format: %s", buffer);
         }
+
+        // Extract and validate sequence number
+        char* seq_marker = strstr(buffer, "[SEQ ");
+        if (seq_marker) {
+            int seq_num;
+            if (sscanf(seq_marker, "[SEQ %d]", &seq_num) == 1) {
+                if (seq_num >= 0 && seq_num < global_msg_counter) {
+                    if (seen_sequences[seq_num]) {
+                        fprintf(stderr, "Duplicate sequence number: %d\n", seq_num);
+                        duplicate_sequences++;
+                    }
+                    seen_sequences[seq_num] = true;
+                    if (seq_num > max_sequence) {
+                        max_sequence = seq_num;
+                    }
+                } else {
+                    fprintf(stderr, "Sequence number out of range: %d/%d\n", seq_num, global_msg_counter);
+                }
+            }
+        }
     }
 
     fclose(file);
 
+    // Check for missing sequence numbers
+    for (int i = 0; i <= max_sequence; i++) {
+        if (!seen_sequences[i]) {
+            missing_sequences++;
+        }
+    }
+
     printf("Validation: Found %d messages, expected %d\n",
            line_count, expected_total_messages);
+    printf("Sequence validation: max=%d, duplicates=%d, missing=%d\n",
+           max_sequence, duplicate_sequences, missing_sequences);
 
     // Print per-thread message counts
     printf("Messages per thread:\n");
@@ -166,7 +199,10 @@ bool validate_log(const char* log_filename, int expected_total_messages) {
         }
     }
 
-    return line_count == expected_total_messages;
+    free(seen_sequences);
+    return line_count == expected_total_messages &&
+           duplicate_sequences == 0 &&
+           missing_sequences == 0;
 }
 
 // Additional stress test with varying message sizes
@@ -176,10 +212,13 @@ void run_mixed_size_test(const char* log_filename) {
     // Remove old log file if it exists
     unlink(log_filename);
 
+    // Reset the sequence counter for this test
+    atomic_store(&global_seq_counter, 0);
+
     // Open the log
     log_handle_t* handle = mmlog_open(log_filename, CHUNK_SIZE, NUM_CHUNKS);
     if (!handle) {
-        fprintf(stderr, "Failed to open log for mixed size test: %s\n", strerror(errno));
+        fprintf(stderr, "Failed to open log for mixed size test: %s\n", mmlog_strerror_cur());
         return;
     }
 
@@ -204,9 +243,10 @@ void run_mixed_size_test(const char* log_filename) {
         printf("Writing %d messages of size %lud bytes\n", count_per_size, size);
 
         for (int j = 0; j < count_per_size; j++) {
-            // Add sequence number at the end
+            // Add atomic sequence number at the end
+            int seq_num = atomic_fetch_add(&global_seq_counter, 1);
             char seq_suffix[32];
-            snprintf(seq_suffix, sizeof(seq_suffix), " [SEQ %d]", j);
+            snprintf(seq_suffix, sizeof(seq_suffix), " [SEQ %d]", seq_num);
             size_t seq_len = strlen(seq_suffix);
 
             if (strlen(buffer) + seq_len < size) {
@@ -215,7 +255,7 @@ void run_mixed_size_test(const char* log_filename) {
 
             if (!mmlog_insert(handle, buffer, size)) {
                 fprintf(stderr, "Failed to insert message of size %lud: %s\n",
-                        size, strerror(errno));
+                        size, mmlog_strerror_cur());
                 break;
             }
         }
@@ -224,6 +264,7 @@ void run_mixed_size_test(const char* log_filename) {
     }
 
     // Clean up
+    mmlog_trim(handle);
     free(handle);
 
     // Validation - just count the total bytes
@@ -241,7 +282,7 @@ void run_mixed_size_test(const char* log_filename) {
     }
 }
 
-int main() {
+int main(void) {
     const char* log_filename = "thread_test.log";
     worker_info_t workers[NUM_THREADS];
 
@@ -250,6 +291,9 @@ int main() {
 
     // Remove old log file if it exists
     unlink(log_filename);
+
+    // Initialize atomic sequence counter
+    atomic_store(&global_seq_counter, 0);
 
     // Create and start worker threads
     for (int i = 0; i < NUM_THREADS; i++) {
@@ -287,7 +331,6 @@ int main() {
 
     printf("\n%d/%d threads completed successfully\n", success_count, NUM_THREADS);
     printf("Total messages written: %d\n", total_messages);
-
 
     // Since we're done, trim the file
     log_handle_t *handle = mmlog_open(log_filename, CHUNK_SIZE, NUM_CHUNKS);

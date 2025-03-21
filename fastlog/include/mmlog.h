@@ -133,7 +133,7 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
     handle->data_fd = fd_data;
     handle->metadata_fd = fd_meta;
     atomic_store(&metadata->file_size, chunk_size);
-    atomic_store_explicit(&metadata->is_ready, true, memory_order_release);
+    atomic_store(&metadata->is_ready, true);
     return true;
 
 files_create_cleanup:
@@ -176,7 +176,7 @@ static inline bool try_check_file_ready(void* args)
 static inline bool try_check_metadata_ready(void* args)
 {
     log_metadata_t* metadata = (log_metadata_t*)args;
-    return atomic_load_explicit(&metadata->is_ready, memory_order_acquire);
+    return atomic_load(&metadata->is_ready);
 }
 
 bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
@@ -188,6 +188,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     // Before we mmap the metadata, check the file size.  If it's nonzero, but less than the size of the metadata, it's
     // probable that we have an incompatible metadata version--so bail out
     try_check_file_ready_args_t fd_meta_args = {&fd_meta, meta_filename, sizeof(log_metadata_t)};
+    try_check_file_ready_args_t fd_data_args = {&fd_data, filename, metadata->chunk_size};
     if (!hot_wait_for_cond(try_check_file_ready, &fd_meta_args, SLEEP_TIME_MAX_MS)) {
         goto files_open_cleanup;
     }
@@ -211,7 +212,6 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     }
 
     // Finally, we have to open the data file
-    try_check_file_ready_args_t fd_data_args = {&fd_data, filename, metadata->chunk_size};
     if (!hot_wait_for_cond(try_check_file_ready, &fd_data_args, SLEEP_TIME_MAX_MS)) {
         goto files_open_cleanup;
     }
@@ -426,7 +426,7 @@ bool mmlog_clean_chunks(chunk_buffer_t* chunks)
         }
 
         // Check if chunk can be cleaned
-        if (!tail_chunk->is_untracked && tail_chunk->ref_count > 1) {
+        if (!tail_chunk->is_untracked && tail_chunk->ref_count > 0) {
             break;  // Also no chunk to clean
         }
 
@@ -576,32 +576,27 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
         return NULL;
     }
 
-    chunk_buffer_t* chunks = &handle->chunks;
-
-    // Try to find an existing chunk with our cursor first (no lock needed)
-    // This is a fast path for the common case where the cursor is in the current chunk
-    chunk_info_t** head_ptr = atomic_load(&chunks->head);
-    if (head_ptr && *head_ptr != NULL && *head_ptr != CHUNK_PENDING) {
-        chunk_info_t* head_chunk = atomic_load((chunk_info_t * _Atomic*)head_ptr);
-        if (is_cursor_in_chunk(head_chunk, cursor)) {
-            atomic_fetch_add(&head_chunk->ref_count, 1);
-            return head_chunk;
-        }
-    }
-
     // Need to create or find a suitable chunk - acquire lock for the entire operation
+    chunk_buffer_t* chunks = &handle->chunks;
     if (!lock_head(chunks)) {
         errno = EAGAIN;
         return NULL;
     }
-
-    // Reload pointers after acquiring lock
-    head_ptr = atomic_load(&chunks->head);
+    chunk_info_t** head_ptr = atomic_load(&chunks->head);
+    chunk_info_t** tail_ptr = atomic_load(&chunks->tail);
     if (!head_ptr) {
         head_ptr = chunks->buffer;  // Initialize head pointer if NULL
     }
-    chunk_info_t** tail_ptr = atomic_load(&chunks->tail);
-    chunk_info_t* head_chunk = add_new_chunk(handle, chunks, head_ptr, tail_ptr, cursor);
+    chunk_info_t* head_chunk = *head_ptr;
+
+    // If we fit inside of the head, we're done
+    if (head_chunk && is_cursor_in_chunk(head_chunk, cursor)) {
+        atomic_fetch_add(&head_chunk->ref_count, 1);
+        unlock_head(chunks);
+        return head_chunk;
+    }
+
+    head_chunk = add_new_chunk(handle, chunks, head_ptr, tail_ptr, cursor);
     if (!head_chunk) {
         unlock_head(chunks);
         return NULL;  // Failed to add new chunk
@@ -649,6 +644,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
         //   so there is no point in using the ringbuffer--just map everything specifically for this operation
         // - If the span straddles a chunk in its entirety, then we also avoid using the ringbuffer
         // Rather than hassling with mmap, let's just do a direct write to memory
+        // TODO signals?
         return size == (size_t)pwrite(handle->data_fd, data, size, cursor);
     } else {
         // Handle 0 or 1 crossing by writing each portion to the appropriate chunk
