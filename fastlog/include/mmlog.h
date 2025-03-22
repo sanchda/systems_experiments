@@ -77,7 +77,41 @@ typedef struct {
 // X macro for error codes
 #define ERR_TABLE(X) \
     X(OK, "mmlog success") \
-    X(CLOCK_ERR, "[ms_since_epoch] error in gettimeofday()") \
+    X(CLOCK_GETTIMEOFDAY, "[ms_since_epoch] error in gettimeofday()") \
+    X(FILES_CREATE_FTRUNCATE_MDATA, "[files_create] metadata ftruncate() failed") \
+    X(FILES_CREATE_MMAP_MDATA, "[files_create] metadata mmap() failed") \
+    X(FILES_CREATE_OPEN_DATA, "[files_create] data open() failed on data file") \
+    X(FILES_CREATE_FTRUNCATE_DATA, "[files_create] data ftruncate() failed") \
+    X(TRY_CHECK_FILE_READY_OPEN, "[try_check_file_ready] open() failed") \
+    X(TRY_CHECK_FILE_READY_FSTAT, "[try_check_file_ready] fstat() failed") \
+    X(FILES_OPEN_MDATA_READY_OPEN, "[files_open] metadata not ready (open)") \
+    X(FILES_OPEN_MDATA_READY_FSTAT, "[files_open] metadata not ready (fstat)") \
+    X(FILES_OPEN_MDATA_MMAP, "[files_open] metadata mmap() failed") \
+    X(FILES_OPEN_MDATA_READY, "[files_open] metadata not ready") \
+    X(FILES_OPEN_DATA_READY_OPEN, "[files_open] data not ready (open)") \
+    X(FILES_OPEN_DATA_READY_FSTAT, "[files_open] data not ready (fstat)") \
+    X(FILES_OPEN_DATA_MMAP, "[files_open] metadata mmap() failed") \
+    X(FILES_OPEN_VERSION, "[files_open] incompatible metadata version") \
+    X(FILES_OPEN_OR_CREATE_EINVAL, "[files_open_or_create] invalid arguments") \
+    X(FILES_OPEN_OR_CREATE_ENOMEM, "[files_open_or_create] out of memory") \
+    X(MMLOG_OPEN_EINVAL, "[mmlog_open] invalid arguments") \
+    X(MMLOG_OPEN_ENOMEM, "[mmlog_open] out of memory") \
+    X(MMLOG_OPEN_OR_CREATE_EINVAL, "[mmlog_open_or_create] invalid arguments") \
+    X(FILE_EXPAND_INNER_PANICKED, "[file_expand_inner] log is in a panic state") \
+    X(FILE_EXPAND_INNER_GROW, "[file_expand_inner] ftruncate() failed") \
+    X(MMLOG_CHECKOUT_EINVAL, "[mmlog_checkout] invalid arguments") \
+    X(MMLOG_CLEAN_CHUNKS_EINVAL, "[mmlog_clean_chunks] invalid arguments") \
+    X(CREATE_CHUNK_AT_CURSOR_ENOMEM, "[create_chunk_at_cursor] out of memory") \
+    X(CREATE_CHUNK_AT_CURSOR_MMAP, "[create_chunk_at_cursor] mmap() failed") \
+    X(ADD_NEW_CHUNK_EINVALID, "[add_new_chunk] invalid arguments") \
+    X(ADD_NEW_CHUNK_EWAIT, "[add_new_chunk] ringbuffer is full") \
+    X(MMLOG_RB_CHECKOUT_EINVAL, "[mmlog_rb_checkout] invalid arguments") \
+    X(MMLOG_RB_CHECKOUT_NOLOCK, "[mmlog_rb_checkout] failed to acquire head lock") \
+    X(WRITE_TO_CHUNK_ECHUNK, "[write_to_chunk] failed to checkout chunk") \
+    X(MMLOG_INSERT_EINVAL, "[mmlog_insert] invalid arguments") \
+    X(MMLOG_INSERT_PWRITE, "[mmlog_insert] pwrite() failed") \
+    X(MMLOG_TRIM_EINVAL, "[mmlog_trim] invalid arguments") \
+    X(MMLOG_TRIM_FTRUNCATE, "[mmlog_trim] ftruncate() failed") \
     X(_LENGTH, "UNKNOWN ERROR")
 
 // Error codes
@@ -109,6 +143,7 @@ int64_t ms_since_epoch_monotonic(void)
 {
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        mmlog_errno = MMLOG_ERR_CLOCK_GETTIMEOFDAY;
         return -1;  // I mean, sure, but will anybody realistically ever check?
     }
     return (int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec / 1000000;
@@ -132,12 +167,15 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
 {
     log_metadata_t* metadata = NULL;
     int fd_data = -1;
+    mmlog_errno = MMLOG_ERR_OK;
     if (-1 == ftruncate(fd_meta, sizeof(log_metadata_t))) {
+        mmlog_errno = MMLOG_ERR_FILES_CREATE_FTRUNCATE_MDATA;
         goto files_create_cleanup;
     }
 
     metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
     if (MAP_FAILED == metadata) {
+        mmlog_errno = MMLOG_ERR_FILES_CREATE_MMAP_MDATA;
         goto files_create_cleanup;
     }
 
@@ -151,12 +189,13 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
     // binary data. For this implementation, just clobber the file!
     fd_data = open(filename, O_RDWR | O_CREAT, 0644);
     if (-1 == fd_data) {
+        mmlog_errno = MMLOG_ERR_FILES_CREATE_OPEN_DATA;
         goto files_create_cleanup;
     }
 
     // Zero + init the data file and init the metadata file
-    if (-1 == ftruncate(fd_data, 0) || -1 == ftruncate(fd_data, chunk_size) ||
-        -1 == ftruncate(fd_meta, sizeof(log_metadata_t))) {
+    if (-1 == ftruncate(fd_data, 0) || -1 == ftruncate(fd_data, chunk_size)) {
+        mmlog_errno = MMLOG_ERR_FILES_CREATE_FTRUNCATE_DATA;
         goto files_create_cleanup;
     }
 
@@ -194,11 +233,13 @@ static inline bool try_check_file_ready(void* args)
     if (-1 == *fd) {
         *fd = open(filename, O_RDWR);
         if (-1 == *fd) {
+            mmlog_errno = MMLOG_ERR_TRY_CHECK_FILE_READY_OPEN;
             return false;
         }
     }
     struct stat st;
     if (0 != fstat(*fd, &st) || (size_t)st.st_size < size) {
+        mmlog_errno = MMLOG_ERR_TRY_CHECK_FILE_READY_FSTAT;
         return false;
     }
     return true;
@@ -212,6 +253,7 @@ static inline bool try_check_metadata_ready(void* args)
 
 bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
 {
+    mmlog_errno = MMLOG_ERR_OK;
     int fd_meta = -1;
     int fd_data = -1;
     log_metadata_t* metadata = NULL;
@@ -221,6 +263,11 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     try_check_file_ready_args_t fd_meta_args = {&fd_meta, meta_filename, sizeof(log_metadata_t)};
     try_check_file_ready_args_t fd_data_args = {&fd_data, filename, metadata->chunk_size};
     if (!hot_wait_for_cond(try_check_file_ready, &fd_meta_args, SLEEP_TIME_MAX_MS)) {
+        if (mmlog_errno == MMLOG_ERR_TRY_CHECK_FILE_READY_OPEN) {
+            mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_READY_OPEN;
+        } else if (mmlog_errno == MMLOG_ERR_TRY_CHECK_FILE_READY_FSTAT) {
+            mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_READY_FSTAT;
+        }
         goto files_open_cleanup;
     }
 
@@ -228,22 +275,29 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     // need)
     metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
     if (MAP_FAILED == metadata) {
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_MMAP;
         goto files_open_cleanup;
     }
 
     // Sit in a try-sleep loop for checking readiness
     if (!hot_wait_for_cond(try_check_metadata_ready, metadata, SLEEP_TIME_MAX_MS)) {
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_READY;
         goto files_open_cleanup;
     }
 
     // If the version is not compatible, we can't use this log
     if (metadata->version != MMLOG_VERSION) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_VERSION;
         goto files_open_cleanup;
     }
 
     // Finally, we have to open the data file
     if (!hot_wait_for_cond(try_check_file_ready, &fd_data_args, SLEEP_TIME_MAX_MS)) {
+        if (mmlog_errno == MMLOG_ERR_TRY_CHECK_FILE_READY_OPEN) {
+            mmlog_errno = MMLOG_ERR_FILES_OPEN_DATA_READY_OPEN;
+        } else if (mmlog_errno == MMLOG_ERR_TRY_CHECK_FILE_READY_FSTAT) {
+            mmlog_errno = MMLOG_ERR_FILES_OPEN_DATA_READY_FSTAT;
+        }
         goto files_open_cleanup;
     }
 
@@ -268,15 +322,18 @@ files_open_cleanup:
 
 bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
+    mmlog_errno = MMLOG_ERR_OK;
     static const char* suffix = ".mmlog";
     size_t meta_filename_len = strlen(filename) + strlen(suffix) + 1;
     char* meta_filename = (char*)malloc(meta_filename_len);
     int fd_meta = -1;
     if (!meta_filename) {
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_EINVAL;
         goto files_open_or_create_cleanup;
     }
 
     if (snprintf(meta_filename, meta_filename_len, "%s.mmlog", filename) < 0) {
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_ENOMEM;
         goto files_open_or_create_cleanup;
     }
 
@@ -286,10 +343,12 @@ bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_
     fd_meta = open(meta_filename, O_RDWR | O_CREAT | O_EXCL, 0644);
     if (-1 == fd_meta) {
         if (!files_open(filename, meta_filename, handle)) {
+            // callee sets errno
             goto files_open_or_create_cleanup;
         }
     } else {
         if (!files_create(fd_meta, filename, chunk_size, handle)) {
+            // callee sets errno
             goto files_open_or_create_cleanup;
         }
     }
@@ -306,16 +365,17 @@ files_open_or_create_cleanup:
 
 log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk_count)
 {
-    // Validate chunk size (must be multiple of page size)
-    // Validate chunk count (ringbuffer can't have just one entry)
+    mmlog_errno = MMLOG_ERR_OK;
+    // chunks are page multiples, and we need at least 2 chunks
     if (chunk_size % LOG_PAGE_SIZE != 0 || chunk_size == 0 || chunk_count < 2) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_MMLOG_OPEN_EINVAL;
         return NULL;
     }
 
     // Allocate handle
     log_handle_t* handle = (log_handle_t*)calloc(1, sizeof(log_handle_t));
     if (!handle) {
+        mmlog_errno = MMLOG_ERR_MMLOG_OPEN_ENOMEM;
         return NULL;
     }
 
@@ -323,6 +383,7 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk
     handle->chunks.capacity = chunk_count;
     handle->chunks.buffer = (_Atomic(chunk_info_t**))(chunk_info_t**)calloc(chunk_count, sizeof(chunk_info_t*));
     if (!handle->chunks.buffer) {
+        mmlog_errno = MMLOG_ERR_MMLOG_OPEN_ENOMEM;
         free(handle);
         return NULL;
     }
@@ -332,6 +393,7 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk
     }
 
     if (!files_open_or_create(filename, chunk_size, handle)) {
+        // callee sets errno
         free(handle->chunks.buffer);
         free(handle);
         return NULL;
@@ -355,6 +417,7 @@ static inline bool file_expand_inner(void* arg)
     if (atomic_load(&metadata->is_panicked)) {
         // Unfortunate, but we'll probably end up retrying in this condition
         // TODO fence this properly or create an early escape enum or something
+        mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_PANICKED;
         return false;
     }
 
@@ -368,6 +431,7 @@ static inline bool file_expand_inner(void* arg)
                 // Whoa, we can't ftruncate!  Everything sucks!
                 atomic_store(&metadata->is_panicked, true);
                 atomic_store(&metadata->is_locked, false);
+                mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_GROW;
                 return true;  // Bails out, but we we need to check in the caller
             }
 
@@ -389,8 +453,10 @@ static inline bool file_expand_inner(void* arg)
 
 bool data_file_expand(log_handle_t* handle, uint64_t end)
 {
+    mmlog_errno = MMLOG_ERR_OK;
     file_expand_args_t args = {handle, end};
     if (hot_wait_for_cond(file_expand_inner, &args, SLEEP_TIME_MAX_MS)) {
+        // callee sets errno
         return !atomic_load(&handle->metadata->is_panicked);
     }
     return false;
@@ -400,8 +466,9 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
 {
     // Gets the start position for the requested write operation
     // Will increase the capacity of the file if needed, but does not map the new pages
+    mmlog_errno = MMLOG_ERR_OK;
     if (!handle || !handle->metadata) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_MMLOG_CHECKOUT_EINVAL;
         return LOG_CURSOR_INVALID;
     }
 
@@ -412,6 +479,7 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
 
     if (end > file_size) {
         if (!data_file_expand(handle, end)) {
+            // callee sets errno
             return LOG_CURSOR_INVALID;
         }
     }
@@ -429,8 +497,9 @@ bool mmlog_clean_chunks(chunk_buffer_t* chunks)
     // 4. If successful, clean it up and repeat.
     // 5. If not, then repeat anyway
     // 6. Stop if the current tail cannot be cleaned (e.g., it is the head or it has a nonzero refcount)
+    mmlog_errno = MMLOG_ERR_OK;
     if (!chunks || !chunks->buffer) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_MMLOG_CLEAN_CHUNKS_EINVAL;
         return false;  // Invalid chunk buffer
     }
 
@@ -493,8 +562,10 @@ uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
 
 static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor)
 {
+    mmlog_errno = MMLOG_ERR_OK;
     chunk_info_t* chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
     if (!chunk) {
+        mmlog_errno = MMLOG_ERR_CREATE_CHUNK_AT_CURSOR_ENOMEM;
         return NULL;
     }
 
@@ -504,6 +575,7 @@ static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t curso
     chunk->mapping = mmap(NULL, chunk->size, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data_fd, chunk->start_offset);
 
     if (MAP_FAILED == chunk->mapping) {
+        mmlog_errno = MMLOG_ERR_CREATE_CHUNK_AT_CURSOR_MMAP;
         free(chunk);
         return NULL;
     }
@@ -551,9 +623,11 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
                                    chunk_info_t** tail_ptr,
                                    uint64_t cursor)
 {
+    mmlog_errno = MMLOG_ERR_OK;
+
     // Check if head_ptr is NULL
     if (!head_ptr) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_ADD_NEW_CHUNK_EINVALID;
         return NULL;
     }
 
@@ -573,7 +647,8 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
         next_head_ptr = get_next_head_ptr(chunks, head_ptr);
 
         if (next_head_ptr == tail_ptr) {
-            errno = ENOSPC;
+            // Still full after cleaning, so we can't add a new chunk
+            mmlog_errno = MMLOG_ERR_ADD_NEW_CHUNK_EWAIT;
             return NULL;
         }
     }
@@ -583,8 +658,8 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
     if (!new_chunk) {
         // Unmark the pending chunk; I guess this might create churn as other writers try the same thing
         // TODO: probably a global failure state, like our panic state
+        // callee sets errno
         atomic_store((chunk_info_t * _Atomic*)next_head_ptr, NULL);
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -601,16 +676,18 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
 
 chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 {
+    mmlog_errno = MMLOG_ERR_OK;
+
     // Validate inputs
     if (!handle || !handle->chunks.buffer) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_MMLOG_RB_CHECKOUT_EINVAL;
         return NULL;
     }
 
     // Need to create or find a suitable chunk - acquire lock for the entire operation
     chunk_buffer_t* chunks = &handle->chunks;
     if (!lock_head(chunks)) {
-        errno = EAGAIN;
+        mmlog_errno = MMLOG_ERR_MMLOG_RB_CHECKOUT_NOLOCK;
         return NULL;
     }
     chunk_info_t** head_ptr = atomic_load(&chunks->head);
@@ -629,6 +706,7 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 
     head_chunk = add_new_chunk(handle, chunks, head_ptr, tail_ptr, cursor);
     if (!head_chunk) {
+        // callee sets errno
         unlock_head(chunks);
         return NULL;  // Failed to add new chunk
     }
@@ -639,8 +717,10 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 
 static bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* data, size_t size)
 {
+    mmlog_errno = MMLOG_ERR_OK;
     chunk_info_t* chunk = mmlog_rb_checkout(handle, cursor);
     if (!chunk) {
+        mmlog_errno = MMLOG_ERR_WRITE_TO_CHUNK_ECHUNK;
         return false;  // Failed to checkout chunk
     }
 
@@ -652,8 +732,10 @@ static bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* da
 
 bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 {
+    mmlog_errno = MMLOG_ERR_OK;
+
     if (!handle || !data || size == 0) {
-        errno = EINVAL;
+        mmlog_errno = MMLOG_ERR_MMLOG_INSERT_EINVAL;
         return false;
     }
 
@@ -661,6 +743,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 
     uint64_t cursor = mmlog_checkout(handle, size);
     if (cursor == LOG_CURSOR_INVALID) {
+        // callee sets errno
         return false;
     }
 
@@ -676,7 +759,11 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
         // - If the span straddles a chunk in its entirety, then we also avoid using the ringbuffer
         // Rather than hassling with mmap, let's just do a direct write to memory
         // TODO signals?
-        return size == (size_t)pwrite(handle->data_fd, data, size, cursor);
+        if (size != (size_t)pwrite(handle->data_fd, data, size, cursor)) {
+            mmlog_errno = MMLOG_ERR_MMLOG_INSERT_PWRITE;
+            return false;  // Failed to write to chunk
+        }
+        return true;
     } else {
         // Handle 0 or 1 crossing by writing each portion to the appropriate chunk
         uint64_t current_cursor = cursor;
@@ -694,6 +781,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 
             // Write to this chunk
             if (!write_to_chunk(handle, current_cursor, (const char*)data + bytes_written, bytes_to_write)) {
+                // callee sets errno
                 return false;
             }
 
@@ -711,8 +799,11 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
 
 void mmlog_trim(log_handle_t* handle)
 {
+    mmlog_errno = MMLOG_ERR_OK;
+
     // Trims the log file to the current cursor position
     if (!handle || !handle->metadata) {
+        mmlog_errno = MMLOG_ERR_MMLOG_TRIM_EINVAL;
         return;
     }
 
@@ -721,6 +812,7 @@ void mmlog_trim(log_handle_t* handle)
     if (-1 == ftruncate(handle->data_fd, cursor)) {
         // Technically this is a failure, but I have no idea what to do since this is like an optional validation nobody
         // asked for
+        mmlog_errno = MMLOG_ERR_MMLOG_TRIM_FTRUNCATE;
     }
 }
 
