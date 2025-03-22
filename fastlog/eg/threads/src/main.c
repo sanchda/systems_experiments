@@ -168,7 +168,7 @@ bool validate_log(const char* log_filename, int expected_total_messages) {
                         max_sequence = seq_num;
                     }
                 } else {
-                    fprintf(stderr, "Sequence number out of range: %d/%d\n", seq_num, global_msg_counter);
+                    // fprintf(stderr, "Sequence number out of range: %d/%d\n", seq_num, global_msg_counter);
                 }
             }
         }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sched.h>
 #include <stdatomic.h>
@@ -28,8 +27,10 @@ typedef struct {
     _Atomic bool is_ready;       // Initialization flag (true when fully initialized)
     _Atomic bool is_locked;      // Lock flag for file extension
     _Atomic bool is_panicked;    // Panic flag (true when log is in an inconsistent state)
+    _Atomic bool fill_gen;       // Fills new allocations with the current gen count (for debugging purposes)
     _Atomic uint64_t file_size;  // Current physical size of the data file
     _Atomic uint64_t cursor;     // Current append position
+    _Atomic uint64_t gen_count;  // Generation count (incremented on each write)
     uint32_t page_size;          // Fixed page size value
     uint32_t chunk_size;         // Size of chunks (multiple of page_size)
 } log_metadata_t;
@@ -99,6 +100,7 @@ typedef struct {
     X(MMLOG_OPEN_OR_CREATE_EINVAL, "[mmlog_open_or_create] invalid arguments") \
     X(FILE_EXPAND_INNER_PANICKED, "[file_expand_inner] log is in a panic state") \
     X(FILE_EXPAND_INNER_GROW, "[file_expand_inner] ftruncate() failed") \
+    X(FILE_EXPAND_INNER_LOCKED, "[file_expand_inner] failed to acquire lock") \
     X(MMLOG_CHECKOUT_EINVAL, "[mmlog_checkout] invalid arguments") \
     X(MMLOG_CLEAN_CHUNKS_EINVAL, "[mmlog_clean_chunks] invalid arguments") \
     X(CREATE_CHUNK_AT_CURSOR_ENOMEM, "[create_chunk_at_cursor] out of memory") \
@@ -136,7 +138,7 @@ const char * mmlog_strerror(mmlog_err_t err)
 
 mmlog_err_t mmlog_errno = MMLOG_ERR_OK;
 const char * mmlog_strerror_cur() {
-    return mmlog_strerror(errno);
+    return mmlog_strerror(mmlog_errno);
 }
 
 int64_t ms_since_epoch_monotonic(void)
@@ -202,6 +204,7 @@ bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_ha
     handle->metadata = metadata;
     handle->data_fd = fd_data;
     handle->metadata_fd = fd_meta;
+    atomic_store(&metadata->gen_count, 0);
     atomic_store(&metadata->file_size, chunk_size);
     atomic_store(&metadata->is_ready, true);
     return true;
@@ -415,6 +418,8 @@ typedef struct {
 
 static inline bool file_expand_inner(void* arg)
 {
+    mmlog_errno = MMLOG_ERR_OK;
+
     file_expand_args_t* args = (file_expand_args_t*)arg;
     log_handle_t* handle = args->handle;
     uint64_t end = args->end;
@@ -440,6 +445,7 @@ static inline bool file_expand_inner(void* arg)
                 mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_GROW;
                 return true;  // Bails out, but we we need to check in the caller
             }
+            //
 
             // Expanded, update metadata
             atomic_store(&metadata->file_size, new_size);
@@ -454,6 +460,7 @@ static inline bool file_expand_inner(void* arg)
     }
 
     // Couldn't take the lock, so retry
+    mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_LOCKED;
     return false;
 }
 
@@ -732,6 +739,7 @@ static bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* da
 
     uint64_t chunk_offset = cursor - chunk->start_offset;
     memcpy((char*)chunk->mapping + chunk_offset, data, size);
+    atomic_fetch_add(&handle->metadata->gen_count, 1);  // Increment generation count
     atomic_fetch_sub(&chunk->ref_count, 1);
     return true;
 }
@@ -748,7 +756,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
     log_metadata_t* metadata = handle->metadata;
 
     uint64_t cursor = mmlog_checkout(handle, size);
-    if (cursor == LOG_CURSOR_INVALID) {
+    if (LOG_CURSOR_INVALID == cursor) {
         // callee sets errno
         return false;
     }
