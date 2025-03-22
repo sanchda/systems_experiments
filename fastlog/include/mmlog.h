@@ -93,7 +93,7 @@ typedef struct {
     X(FILES_OPEN_DATA_MMAP, "[files_open] metadata mmap() failed") \
     X(FILES_OPEN_VERSION, "[files_open] incompatible metadata version") \
     X(FILES_OPEN_OR_CREATE_EINVAL, "[files_open_or_create] invalid arguments") \
-    X(FILES_OPEN_OR_CREATE_ENOMEM, "[files_open_or_create] out of memory") \
+    X(FILES_OPEN_OR_CREATE_SNPRINTF, "[files_open_or_create] failed to intern string") \
     X(MMLOG_OPEN_EINVAL, "[mmlog_open] invalid arguments") \
     X(MMLOG_OPEN_ENOMEM, "[mmlog_open] out of memory") \
     X(MMLOG_OPEN_OR_CREATE_EINVAL, "[mmlog_open_or_create] invalid arguments") \
@@ -256,12 +256,12 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     mmlog_errno = MMLOG_ERR_OK;
     int fd_meta = -1;
     int fd_data = -1;
-    log_metadata_t* metadata = NULL;
+    log_metadata_t* metadata = handle->metadata;
 
     // Before we mmap the metadata, check the file size.  If it's nonzero, but less than the size of the metadata, it's
     // probable that we have an incompatible metadata version--so bail out
     try_check_file_ready_args_t fd_meta_args = {&fd_meta, meta_filename, sizeof(log_metadata_t)};
-    try_check_file_ready_args_t fd_data_args = {&fd_data, filename, metadata->chunk_size};
+    try_check_file_ready_args_t fd_data_args = {&fd_data, filename, 0};
     if (!hot_wait_for_cond(try_check_file_ready, &fd_meta_args, SLEEP_TIME_MAX_MS)) {
         if (mmlog_errno == MMLOG_ERR_TRY_CHECK_FILE_READY_OPEN) {
             mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_READY_OPEN;
@@ -274,6 +274,7 @@ bool files_open(const char* filename, const char* meta_filename, log_handle_t* h
     // Nothing is valid until we've mapped the metadata (above check ensures the metadata file is at least as big as we
     // need)
     metadata = (log_metadata_t*)mmap(NULL, sizeof(log_metadata_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
+    fd_data_args.size = metadata->chunk_size;  // Set the size for the data file check
     if (MAP_FAILED == metadata) {
         mmlog_errno = MMLOG_ERR_FILES_OPEN_MDATA_MMAP;
         goto files_open_cleanup;
@@ -323,6 +324,12 @@ files_open_cleanup:
 bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
     mmlog_errno = MMLOG_ERR_OK;
+    if (!filename) {
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_EINVAL;
+        return false;
+    }
+
+
     static const char* suffix = ".mmlog";
     size_t meta_filename_len = strlen(filename) + strlen(suffix) + 1;
     char* meta_filename = (char*)malloc(meta_filename_len);
@@ -333,7 +340,7 @@ bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_
     }
 
     if (snprintf(meta_filename, meta_filename_len, "%s.mmlog", filename) < 0) {
-        mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_ENOMEM;
+        mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_SNPRINTF;
         goto files_open_or_create_cleanup;
     }
 
