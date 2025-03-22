@@ -324,11 +324,10 @@ files_open_cleanup:
 bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
     mmlog_errno = MMLOG_ERR_OK;
-    if (!filename) {
+    if (!filename || !*filename || chunk_size == 0 || chunk_size % LOG_PAGE_SIZE != 0 || !handle) {
         mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_EINVAL;
         return false;
     }
-
 
     static const char* suffix = ".mmlog";
     size_t meta_filename_len = strlen(filename) + strlen(suffix) + 1;
@@ -339,7 +338,7 @@ bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_
         goto files_open_or_create_cleanup;
     }
 
-    if (snprintf(meta_filename, meta_filename_len, "%s.mmlog", filename) < 0) {
+    if (snprintf(meta_filename, meta_filename_len, "%s%s", filename, suffix) < 0) {
         mmlog_errno = MMLOG_ERR_FILES_OPEN_OR_CREATE_SNPRINTF;
         goto files_open_or_create_cleanup;
     }
