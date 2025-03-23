@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <threads.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -135,7 +136,7 @@ const char * mmlog_strerror(mmlog_err_t err)
     return mmlog_err_msg[err];
 }
 
-mmlog_err_t mmlog_errno = MMLOG_ERR_OK;
+thread_local mmlog_err_t mmlog_errno = MMLOG_ERR_OK;
 const char * mmlog_strerror_cur() {
     return mmlog_strerror(mmlog_errno);
 }
@@ -424,15 +425,15 @@ static inline bool file_expand_inner(void* arg)
     uint64_t end = args->end;
     log_metadata_t* metadata = handle->metadata;
 
-    if (atomic_load(&metadata->is_panicked)) {
-        // Unfortunate, but we'll probably end up retrying in this condition
-        // TODO fence this properly or create an early escape enum or something
-        mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_PANICKED;
-        return false;
-    }
-
     bool expected = false;
     if (atomic_compare_exchange_strong(&metadata->is_locked, &expected, true)) {
+        if (atomic_load(&metadata->is_panicked)) {
+            // Unfortunate, but we'll probably end up retrying in this condition
+            // TODO fence this properly or create an early escape enum or something
+            mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_PANICKED;
+            return false;
+        }
+
         uint64_t file_size = atomic_load(&metadata->file_size);
         if (file_size < end) {
             // Need to expand
