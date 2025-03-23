@@ -15,22 +15,12 @@
 #define NUM_THREADS 16
 #define MESSAGES_PER_THREAD 500
 #define MAX_MESSAGE_SIZE 512
-#define CHUNK_SIZE (4 * 4096)  // 16KB chunks
+#define CHUNK_SIZE (4096)  // 16KB chunks
 #define NUM_CHUNKS 16
 
 // Global atomic sequence counter
 atomic_int global_seq_counter = 0;
 atomic_int global_msg_counter = 0;
-
-// Random message generation
-static const char* word_list[] = {
-    "atomic", "memory", "mapped", "log", "concurrent", "process", "thread",
-    "synchronization", "lock", "append", "only", "ftruncate", "mmap", "file",
-    "metadata", "chunk", "buffer", "ring", "head", "tail", "write", "read",
-    "checkout", "variable", "mutex", "condition", "barrier", "atomic", "signal",
-    "wait", "notify", "broadcast", "acquire", "release", "yield", "sleep", "join"
-};
-#define NUM_WORDS (sizeof(word_list) / sizeof(word_list[0]))
 
 typedef struct {
     const char* log_filename;
@@ -45,33 +35,9 @@ typedef struct {
     thread_args_t args;
 } worker_info_t;
 
-// Generate a random message
-size_t generate_random_message(char* buffer, size_t max_size, int seq_num, int thread_id) {
-    int word_count = 3 + rand() % 8;  // 3 to 10 words
-    size_t pos = 0;
-
-    // Thread ID and timestamp prefix for identification
-    pos += snprintf(buffer + pos, max_size - pos, " [SEQ %d] [THR %d] [%ld] ", seq_num, thread_id, time(NULL));
-
-    for (int i = 0; i < word_count && pos < max_size - 1; i++) {
-        const char* word = word_list[rand() % NUM_WORDS];
-        pos += snprintf(buffer + pos, max_size - pos, "%s ", word);
-    }
-
-    // Ensure null termination
-    buffer[pos] = '\n';
-    pos++;
-    buffer[pos] = '\0';
-    return pos;
-}
-
 // Thread worker function
 void* thread_worker(void* arg) {
     thread_args_t* args = (thread_args_t*)arg;
-
-    // Use thread ID to seed the random number generator
-    unsigned int thread_seed = (unsigned int)time(NULL) ^ (args->thread_num << 16);
-    srand(thread_seed);
 
     // Open the log; strictly speaking it is not recommended or necessary to open the log at the thread level,
     // but this *should* be allowed and everything should work correctly.  The only consequence is that we'll
@@ -89,7 +55,7 @@ void* thread_worker(void* arg) {
 
     for (int i = 0; i < MESSAGES_PER_THREAD; i++) {
         int seq_num = atomic_fetch_add(&global_seq_counter, 1);
-        size_t msg_len = generate_random_message(message, sizeof(message), seq_num, args->thread_num);
+        size_t msg_len = snprintf(message, sizeof(message), "%d,%d,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", args->thread_num, seq_num);
 
         if (!mmlog_insert(handle, message, msg_len)) {
             fprintf(stderr, "Thread %d: Failed to insert message %d: %s\n",
@@ -98,12 +64,10 @@ void* thread_worker(void* arg) {
             args->success = false;
             return NULL;
         }
-        atomic_fetch_add(&global_seq_counter, 1);
         args->messages_written++;
     }
 
     // Clean up
-    mmlog_trim(handle);
     free(handle);
     args->success = true;
     return NULL;
@@ -112,7 +76,7 @@ void* thread_worker(void* arg) {
 // Validate log file contents with thread-specific checks
 bool validate_log(const char* log_filename, int expected_total_messages) {
     // Read the entire log file
-    FILE* file = fopen(log_filename, "rb");
+    FILE* file = fopen(log_filename, "r");
     if (!file) {
         perror("Failed to open log file for validation");
         return false;
@@ -138,39 +102,31 @@ bool validate_log(const char* log_filename, int expected_total_messages) {
     while (fgets(buffer, sizeof(buffer), file) != NULL) {
         line_count++;
 
-        // Extract thread ID from message format [THR xx]
-        char* thread_marker = strstr(buffer, "[THR ");
-        if (thread_marker) {
-            int thread_id;
-            if (sscanf(thread_marker, "[THR %d]", &thread_id) == 1) {
-                if (thread_id >= 0 && thread_id < NUM_THREADS) {
-                    thread_message_counts[thread_id]++;
-                } else {
-                    fprintf(stderr, "Invalid thread ID in log: %d\n", thread_id);
+        // Parse the comma-delimited integers: thread_id,sequence_number
+        int thread_id, seq_num;
+        if (sscanf(buffer, "%d,%d", &thread_id, &seq_num) == 2) {
+            // Validate thread ID
+            if (thread_id >= 0 && thread_id < NUM_THREADS) {
+                thread_message_counts[thread_id]++;
+            } else {
+                fprintf(stderr, "Invalid thread ID in log: %d\n", thread_id);
+            }
+
+            // Validate sequence number
+            if (seq_num >= 0 && seq_num < expected_total_messages) {
+                if (seen_sequences[seq_num]) {
+                    fprintf(stderr, "Duplicate sequence number: %d\n", seq_num);
+                    duplicate_sequences++;
                 }
+                seen_sequences[seq_num] = true;
+                if (seq_num > max_sequence) {
+                    max_sequence = seq_num;
+                }
+            } else {
+                fprintf(stderr, "Sequence number out of range: %d/%d\n", seq_num, expected_total_messages);
             }
         } else {
             fprintf(stderr, "Invalid log line format: %s", buffer);
-        }
-
-        // Extract and validate sequence number
-        char* seq_marker = strstr(buffer, "[SEQ ");
-        if (seq_marker) {
-            int seq_num;
-            if (sscanf(seq_marker, "[SEQ %d]", &seq_num) == 1) {
-                if (seq_num >= 0 && seq_num < global_msg_counter) {
-                    if (seen_sequences[seq_num]) {
-                        fprintf(stderr, "Duplicate sequence number: %d\n", seq_num);
-                        duplicate_sequences++;
-                    }
-                    seen_sequences[seq_num] = true;
-                    if (seq_num > max_sequence) {
-                        max_sequence = seq_num;
-                    }
-                } else {
-                    // fprintf(stderr, "Sequence number out of range: %d/%d\n", seq_num, global_msg_counter);
-                }
-            }
         }
     }
 
@@ -264,22 +220,7 @@ void run_mixed_size_test(const char* log_filename) {
     }
 
     // Clean up
-    mmlog_trim(handle);
     free(handle);
-
-    // Validation - just count the total bytes
-    struct stat st;
-    if (stat(log_filename, &st) == 0) {
-        int expected_size = 0;
-        for (int i = 0; i < num_sizes; i++) {
-            expected_size += sizes[i] * count_per_size;
-        }
-
-        printf("Mixed size test: File size is %ld bytes (expected approximately %d bytes)\n",
-               st.st_size, expected_size);
-    } else {
-        perror("Failed to stat log file");
-    }
 }
 
 int main(void) {

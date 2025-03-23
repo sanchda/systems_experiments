@@ -27,7 +27,6 @@ typedef struct {
     _Atomic bool is_ready;       // Initialization flag (true when fully initialized)
     _Atomic bool is_locked;      // Lock flag for file extension
     _Atomic bool is_panicked;    // Panic flag (true when log is in an inconsistent state)
-    _Atomic bool fill_gen;       // Fills new allocations with the current gen count (for debugging purposes)
     _Atomic uint64_t file_size;  // Current physical size of the data file
     _Atomic uint64_t cursor;     // Current append position
     _Atomic uint64_t gen_count;  // Generation count (incremented on each write)
@@ -445,7 +444,6 @@ static inline bool file_expand_inner(void* arg)
                 mmlog_errno = MMLOG_ERR_FILE_EXPAND_INNER_GROW;
                 return true;  // Bails out, but we we need to check in the caller
             }
-            //
 
             // Expanded, update metadata
             atomic_store(&metadata->file_size, new_size);
