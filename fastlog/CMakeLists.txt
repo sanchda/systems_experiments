@@ -5,7 +5,36 @@ project(${PROJECT_NAME} C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-#set(CLANG_TIDY_COMMAND "clang-tidy" "-checks=bugprone-*,cert-*,misc-*,performance-*,portability-*,readability-*,-clang-analyzer-*")
+
+# Unity Testing Framework
+include(FetchContent)
+FetchContent_Declare(
+    unity
+    GIT_REPOSITORY https://github.com/ThrowTheSwitch/Unity.git
+    GIT_TAG v2.5.2
+)
+FetchContent_MakeAvailable(unity)
+
+# Test executable (create tests directory and test files as needed)
+add_executable(unit_tests EXCLUDE_FROM_ALL tests/mmlog.c)
+target_include_directories(unit_tests
+    PRIVATE include
+    PRIVATE ${unity_SOURCE_DIR}/src
+)
+target_compile_options(unit_tests PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(unit_tests
+    PRIVATE mmlog
+    PRIVATE unity
+)
+
+# Run tests target
+add_custom_target(test
+    COMMAND unit_tests
+    DEPENDS unit_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set(CLANG_TIDY_COMMAND "clang-tidy" "-checks=bugprone-*,cert-*,misc-*,performance-*,portability-*,readability-*,-clang-analyzer-*")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_executable(${PROJECT_NAME} src/main.c)

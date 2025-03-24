@@ -4,3 +4,4 @@ find src include -type f \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name
 mkdir -p ${BUILD_DIR} && cd ${BUILD_DIR}
 cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build .
+make test
