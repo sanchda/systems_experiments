@@ -102,7 +102,7 @@ typedef struct {
     X(FILE_EXPAND_INNER_GROW, "[file_expand_inner] ftruncate() failed") \
     X(FILE_EXPAND_INNER_LOCKED, "[file_expand_inner] failed to acquire lock") \
     X(MMLOG_CHECKOUT_EINVAL, "[mmlog_checkout] invalid arguments") \
-    X(MMLOG_CLEAN_CHUNKS_EINVAL, "[mmlog_clean_chunks] invalid arguments") \
+    X(CLEAN_CHUNKS_EINVAL, "[clean_chunks] invalid arguments") \
     X(CREATE_CHUNK_AT_CURSOR_ENOMEM, "[create_chunk_at_cursor] out of memory") \
     X(CREATE_CHUNK_AT_CURSOR_MMAP, "[create_chunk_at_cursor] mmap() failed") \
     X(ADD_NEW_CHUNK_EINVALID, "[add_new_chunk] invalid arguments") \
@@ -137,11 +137,11 @@ const char * mmlog_strerror(mmlog_err_t err)
 }
 
 thread_local mmlog_err_t mmlog_errno = MMLOG_ERR_OK;
-const char * mmlog_strerror_cur() {
+const char * mmlog_strerror_cur(void) {
     return mmlog_strerror(mmlog_errno);
 }
 
-int64_t ms_since_epoch_monotonic(void)
+static inline int64_t ms_since_epoch_monotonic(void)
 {
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
@@ -165,7 +165,7 @@ static inline bool hot_wait_for_cond(bool (*fun)(void*), void* arg, int64_t time
     return false;
 }
 
-bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_handle_t* handle)
+static inline bool files_create(int fd_meta, const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
     log_metadata_t* metadata = NULL;
     int fd_data = -1;
@@ -254,7 +254,7 @@ static inline bool try_check_metadata_ready(void* args)
     return atomic_load(&metadata->is_ready);
 }
 
-bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
+static inline bool files_open(const char* filename, const char* meta_filename, log_handle_t* handle)
 {
     mmlog_errno = MMLOG_ERR_OK;
     int fd_meta = -1;
@@ -324,7 +324,7 @@ files_open_cleanup:
     return false;
 }
 
-bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_t* handle)
+static inline bool files_open_or_create(const char* filename, uint32_t chunk_size, log_handle_t* handle)
 {
     mmlog_errno = MMLOG_ERR_OK;
     if (!filename || !*filename || chunk_size == 0 || chunk_size % LOG_PAGE_SIZE != 0 || !handle) {
@@ -463,7 +463,7 @@ static inline bool file_expand_inner(void* arg)
     return false;
 }
 
-bool data_file_expand(log_handle_t* handle, uint64_t end)
+static inline bool data_file_expand(log_handle_t* handle, uint64_t end)
 {
     mmlog_errno = MMLOG_ERR_OK;
     file_expand_args_t args = {handle, end};
@@ -485,6 +485,9 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
     }
 
     log_metadata_t* metadata = handle->metadata;
+    if (size > 4096) {
+        printf("size: %lu\n", size);
+    }
     uint64_t start = atomic_fetch_add(&metadata->cursor, size);
     uint64_t end = start + size;
     uint64_t file_size = atomic_load(&metadata->file_size);
@@ -498,7 +501,7 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
     return start;
 }
 
-bool mmlog_clean_chunks(chunk_buffer_t* chunks)
+static inline bool clean_chunks(chunk_buffer_t* chunks)
 {
     // Attempts to clean up any unused chunks in the ring buffer, starting from the tail
     // Chunks are unusued if they are not the head and their refcount is 0
@@ -511,7 +514,7 @@ bool mmlog_clean_chunks(chunk_buffer_t* chunks)
     // 6. Stop if the current tail cannot be cleaned (e.g., it is the head or it has a nonzero refcount)
     mmlog_errno = MMLOG_ERR_OK;
     if (!chunks || !chunks->buffer) {
-        mmlog_errno = MMLOG_ERR_MMLOG_CLEAN_CHUNKS_EINVAL;
+        mmlog_errno = MMLOG_ERR_CLEAN_CHUNKS_EINVAL;
         return false;  // Invalid chunk buffer
     }
 
@@ -562,7 +565,7 @@ bool mmlog_clean_chunks(chunk_buffer_t* chunks)
     return true;
 }
 
-uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
+static inline uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
 {
     uint64_t end = start + size;
 
@@ -572,7 +575,7 @@ uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t chunk_size)
     return end_chunk_index - start_chunk_index;
 }
 
-static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor)
+static inline static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor)
 {
     mmlog_errno = MMLOG_ERR_OK;
     chunk_info_t* chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
@@ -587,6 +590,8 @@ static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t curso
     chunk->mapping = mmap(NULL, chunk->size, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data_fd, chunk->start_offset);
 
     if (MAP_FAILED == chunk->mapping) {
+        printf("cursor: %lu\n", cursor);
+        printf("handle->metadata->chunk_size: %u\n", handle->metadata->chunk_size);
         mmlog_errno = MMLOG_ERR_CREATE_CHUNK_AT_CURSOR_MMAP;
         free(chunk);
         return NULL;
@@ -597,7 +602,7 @@ static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t curso
 }
 
 // Helper to check if cursor is within chunk
-static bool is_cursor_in_chunk(const chunk_info_t* chunk, uint64_t cursor)
+static inline bool is_cursor_in_chunk(const chunk_info_t* chunk, uint64_t cursor)
 {
     return chunk && chunk != CHUNK_PENDING && chunk->start_offset <= cursor &&
            cursor < chunk->start_offset + chunk->size;
@@ -617,7 +622,7 @@ static inline bool lock_head(chunk_buffer_t* chunks)
 }
 
 // Helper to unlock the head pointer
-static void unlock_head(chunk_buffer_t* chunks)
+static inline void unlock_head(chunk_buffer_t* chunks)
 {
     atomic_store(&chunks->head_locked, false);
 }
@@ -629,7 +634,7 @@ static inline chunk_info_t** get_next_head_ptr(chunk_buffer_t* chunks, chunk_inf
 }
 
 // Helper function to add a new chunk
-static chunk_info_t* add_new_chunk(log_handle_t* handle,
+static inline chunk_info_t* add_new_chunk(log_handle_t* handle,
                                    chunk_buffer_t* chunks,
                                    chunk_info_t** head_ptr,
                                    chunk_info_t** tail_ptr,
@@ -651,7 +656,7 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
 
     // Check if buffer is full, retry _one_ time
     if (next_head_ptr == tail_ptr) {
-        mmlog_clean_chunks(&handle->chunks);
+        clean_chunks(&handle->chunks);
 
         // Recalculate next head position with updated pointers
         head_ptr = atomic_load(&chunks->head);
@@ -686,7 +691,7 @@ static chunk_info_t* add_new_chunk(log_handle_t* handle,
     return new_chunk;
 }
 
-chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
+static inline chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
 {
     mmlog_errno = MMLOG_ERR_OK;
 
@@ -727,7 +732,7 @@ chunk_info_t* mmlog_rb_checkout(log_handle_t* handle, uint64_t cursor)
     return head_chunk;
 }
 
-static bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* data, size_t size)
+static inline bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const void* data, size_t size)
 {
     mmlog_errno = MMLOG_ERR_OK;
     chunk_info_t* chunk = mmlog_rb_checkout(handle, cursor);
@@ -805,7 +810,7 @@ bool mmlog_insert(log_handle_t* handle, const void* data, size_t size)
     }
 
     // Check if we need to clean up chunks
-    mmlog_clean_chunks(&handle->chunks);
+    clean_chunks(&handle->chunks);
 
     return true;
 }
