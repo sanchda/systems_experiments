@@ -1,42 +1,61 @@
-#include <iostream>
 #include <chrono>
-#include <string>
-#include <vector>
 #include <cstring>
-#include <unistd.h>
 #include <fcntl.h>
+#include <iostream>
+#ifdef __linux__
+#include <libaio.h>
+#endif
+#include <stdlib.h>
+#include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <sys/uio.h>
-#include <stdlib.h>
-#include <libaio.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
+
+// On MacOS, O_DIRECT isn't defined
+#if defined __APPLE__ || defined __MACH__
+#define O_DIRECT 0
+#endif
 
 enum class AppendMethod {
-    WRITE_APPEND,    // O_APPEND with write()
-    WRITEV_APPEND,   // writev() with O_APPEND
-    FWRITE_APPEND,   // FILE streams with "a" mode
-    DIRECT_APPEND,   // O_DIRECT + O_APPEND
-    AIO_APPEND       // Linux AIO with O_APPEND
+    WRITE_APPEND,   // O_APPEND with write()
+    WRITEV_APPEND,  // writev() with O_APPEND
+    FWRITE_APPEND,  // FILE streams with "a" mode
+    DIRECT_APPEND,  // O_DIRECT + O_APPEND
+#ifdef __linux__
+    AIO_APPEND  // Linux AIO with O_APPEND
+#endif
 };
 
 class FileAppender {
-private:
+  private:
     AppendMethod method_;
     int fd_ = -1;
     FILE* file_ = nullptr;
+#ifdef __linux__
     io_context_t aio_ctx_ = 0;
+#endif
     void* aligned_buffer_ = nullptr;
     size_t aligned_buffer_size_ = 0;
 
-public:
-    FileAppender(AppendMethod method) : method_(method) {}
+    // Statistics
+    size_t write_count_ = 0;
+    std::chrono::nanoseconds total_write_time_{0};
 
-    ~FileAppender() {
+  public:
+    FileAppender(AppendMethod method) : method_(method)
+    {
+    }
+
+    ~FileAppender()
+    {
         Close();
     }
 
-    bool Open(const std::string& filename) {
+    bool Open(const std::string& filename)
+    {
         switch (method_) {
             case AppendMethod::WRITE_APPEND:
             case AppendMethod::WRITEV_APPEND:
@@ -51,42 +70,58 @@ public:
                 fd_ = open(filename.c_str(), O_WRONLY | O_APPEND | O_DIRECT | O_CREAT, 0644);
                 if (fd_ != -1) {
                     // Allocate aligned buffer for direct I/O
-                    aligned_buffer_size_ = 4096; // Typical page size
+                    aligned_buffer_size_ = 4096;  // Typical page size
                     posix_memalign(&aligned_buffer_, aligned_buffer_size_, aligned_buffer_size_);
+#if defined(__APPLE__) || defined(__MACH__)
+                    // On macOS, O_DIRECT is not supported, but F_NOCACHE is kinda/sorta similar
+                    fcntl(fd_, F_NOCACHE, 1);
+#endif
                 }
                 return fd_ != -1 && aligned_buffer_ != nullptr;
 
+#ifdef __linux__
             case AppendMethod::AIO_APPEND:
                 fd_ = open(filename.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
                 memset(&aio_ctx_, 0, sizeof(aio_ctx_));
                 io_setup(128, &aio_ctx_);
                 return fd_ != -1;
+#endif
         }
         return false;
     }
 
-    bool Append(const void* data, size_t size) {
+    bool Append(const void* data, size_t size)
+    {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        bool success = false;
+
         switch (method_) {
             case AppendMethod::WRITE_APPEND:
-                return write(fd_, data, size) == static_cast<ssize_t>(size);
+                success = write(fd_, data, size) == static_cast<ssize_t>(size);
+                break;
 
             case AppendMethod::WRITEV_APPEND: {
                 struct iovec iov;
                 iov.iov_base = const_cast<void*>(data);
                 iov.iov_len = size;
-                return writev(fd_, &iov, 1) == static_cast<ssize_t>(size);
+                success = writev(fd_, &iov, 1) == static_cast<ssize_t>(size);
+                break;
             }
 
             case AppendMethod::FWRITE_APPEND:
-                return fwrite(data, 1, size, file_) == size && fflush(file_) == 0;
+                success = fwrite(data, 1, size, file_) == size && fflush(file_) == 0;
+                break;
 
             case AppendMethod::DIRECT_APPEND: {
                 // For simplicity, assuming data fits in our aligned buffer
-                if (size > aligned_buffer_size_) return false;
+                if (size > aligned_buffer_size_)
+                    return false;
                 memcpy(aligned_buffer_, data, size);
-                return write(fd_, aligned_buffer_, size) == static_cast<ssize_t>(size);
+                success = write(fd_, aligned_buffer_, size) == static_cast<ssize_t>(size);
+                break;
             }
 
+#ifdef __linux__
             case AppendMethod::AIO_APPEND: {
                 struct iocb cb;
                 struct iocb* cbs[1];
@@ -95,14 +130,25 @@ public:
                 io_prep_pwrite(&cb, fd_, const_cast<void*>(data), size, 0);
                 cbs[0] = &cb;
 
-                if (io_submit(aio_ctx_, 1, cbs) != 1) return false;
-                return io_getevents(aio_ctx_, 1, 1, events, NULL) == 1;
+                if (io_submit(aio_ctx_, 1, cbs) != 1)
+                    return false;
+                success = io_getevents(aio_ctx_, 1, 1, events, NULL) == 1;
+                break;
             }
+#endif
         }
-        return false;
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        if (success) {
+            write_count_++;
+            total_write_time_ += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+        }
+
+        return success;
     }
 
-    void Close() {
+    void Close()
+    {
         if (fd_ != -1) {
             close(fd_);
             fd_ = -1;
@@ -113,10 +159,12 @@ public:
             file_ = nullptr;
         }
 
+#ifdef __linux__
         if (aio_ctx_) {
             io_destroy(aio_ctx_);
             aio_ctx_ = 0;
         }
+#endif
 
         if (aligned_buffer_) {
             free(aligned_buffer_);
@@ -124,19 +172,44 @@ public:
         }
     }
 
-    std::string GetMethodName() const {
+    std::string GetMethodName() const
+    {
         switch (method_) {
-            case AppendMethod::WRITE_APPEND:   return "O_APPEND with write()";
-            case AppendMethod::WRITEV_APPEND:  return "writev() with O_APPEND";
-            case AppendMethod::FWRITE_APPEND:  return "FILE streams (fwrite)";
-            case AppendMethod::DIRECT_APPEND:  return "Direct I/O (O_DIRECT)";
-            case AppendMethod::AIO_APPEND:     return "Linux AIO";
+            case AppendMethod::WRITE_APPEND:
+                return "O_APPEND with write()";
+            case AppendMethod::WRITEV_APPEND:
+                return "writev() with O_APPEND";
+            case AppendMethod::FWRITE_APPEND:
+                return "FILE streams (fwrite)";
+            case AppendMethod::DIRECT_APPEND:
+                return "Direct I/O (O_DIRECT)";
+#ifdef __linux__
+            case AppendMethod::AIO_APPEND:
+                return "Linux AIO";
+#endif
         }
         return "Unknown";
     }
+
+    // Statistics getters
+    size_t GetWriteCount() const
+    {
+        return write_count_;
+    }
+    std::chrono::nanoseconds GetTotalWriteTime() const
+    {
+        return total_write_time_;
+    }
+    double GetAverageWriteTimeMs() const
+    {
+        if (write_count_ == 0)
+            return 0.0;
+        return total_write_time_.count() / 1000000.0 / write_count_;
+    }
 };
 
-void RunBenchmark(AppendMethod method, int num_processes, int ops_per_process, size_t data_size) {
+void RunBenchmark(AppendMethod method, int num_processes, int ops_per_process, size_t data_size)
+{
     std::string filename = "/tmp/benchmark_" + std::to_string(static_cast<int>(method));
 
     // Delete file if it exists
@@ -147,7 +220,7 @@ void RunBenchmark(AppendMethod method, int num_processes, int ops_per_process, s
     std::vector<pid_t> pids;
     for (int i = 0; i < num_processes; i++) {
         pid_t pid = fork();
-        if (pid == 0) { // Child process
+        if (pid == 0) {  // Child process
             FileAppender appender(method);
             if (!appender.Open(filename)) {
                 exit(1);
@@ -159,7 +232,7 @@ void RunBenchmark(AppendMethod method, int num_processes, int ops_per_process, s
             }
 
             exit(0);
-        } else { // Parent process
+        } else {  // Parent process
             pids.push_back(pid);
         }
     }
@@ -172,27 +245,34 @@ void RunBenchmark(AppendMethod method, int num_processes, int ops_per_process, s
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    FileAppender appender(method);
-    std::cout << "Method: " << appender.GetMethodName() << std::endl;
-    std::cout << "Time: " << duration.count() << " ms" << std::endl;
+      // Calculate average time per write operation
+      double total_operations = num_processes * ops_per_process;
+      double avg_time_per_op = duration.count() / total_operations;
 
-    // Get file size
-    struct stat st;
-    if (stat(filename.c_str(), &st) == 0) {
-        std::cout << "File size: " << st.st_size << " bytes" << std::endl;
-    }
+      FileAppender appender(method);
+      std::cout << "Method: " << appender.GetMethodName() << std::endl;
+      std::cout << "Time: " << duration.count() << " ms" << std::endl;
+      std::cout << "Average time per write: " << avg_time_per_op << " ms" << std::endl;
+
+      // Get file size
+      struct stat st;
+      if (stat(filename.c_str(), &st) == 0) {
+          std::cout << "File size: " << st.st_size << " bytes" << std::endl;
+      }
 }
 
-int main() {
+int main()
+{
     // Run benchmarks for each method with different configurations
     const int NUM_PROCESSES = 4;
     const int OPS_PER_PROCESS = 1000;
-    const size_t DATA_SIZE = 1024; // 1KB per write
+    const size_t DATA_SIZE = 1024;  // 1KB per write
 
-    std::cout << "Running benchmarks with " << NUM_PROCESSES << " processes, "
-              << OPS_PER_PROCESS << " operations per process, "
-              << DATA_SIZE << " bytes per operation\n" << std::endl;
+    std::cout << "Running benchmarks with " << NUM_PROCESSES << " processes, " << OPS_PER_PROCESS
+              << " operations per process, " << DATA_SIZE << " bytes per operation\n"
+              << std::endl;
 
     RunBenchmark(AppendMethod::WRITE_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE);
     std::cout << std::endl;
@@ -206,9 +286,9 @@ int main() {
     RunBenchmark(AppendMethod::DIRECT_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE);
     std::cout << std::endl;
 
+#ifdef __linux__
     RunBenchmark(AppendMethod::AIO_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE);
+#endif
 
     return 0;
 }
-
-
