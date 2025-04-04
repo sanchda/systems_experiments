@@ -802,8 +802,6 @@ void test_mmlog_random_data(void) {
     const int NUM_ENTRIES = 100;
     const size_t ENTRY_SIZE = 1024;
 
-    uint64_t offsets[NUM_ENTRIES];
-
     // Seed random number generator
     srand((unsigned int)time(NULL));
 

@@ -573,7 +573,7 @@ static inline uint32_t mmlog_cross_count(uint64_t start, size_t size, uint32_t c
     return end_chunk_index - start_chunk_index;
 }
 
-static inline static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor)
+inline static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_t cursor)
 {
     mmlog_errno = MMLOG_ERR_OK;
     chunk_info_t* chunk = (chunk_info_t*)calloc(1, sizeof(chunk_info_t));
