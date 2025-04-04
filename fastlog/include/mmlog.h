@@ -30,7 +30,6 @@ typedef struct {
     _Atomic bool is_panicked;    // Panic flag (true when log is in an inconsistent state)
     _Atomic uint64_t file_size;  // Current physical size of the data file
     _Atomic uint64_t cursor;     // Current append position
-    _Atomic uint64_t gen_count;  // Generation count (incremented on each write)
     uint32_t page_size;          // Fixed page size value
     uint32_t chunk_size;         // Size of chunks (multiple of page_size)
 } log_metadata_t;
@@ -204,7 +203,6 @@ static inline bool files_create(int fd_meta, const char* filename, uint32_t chun
     handle->metadata = metadata;
     handle->data_fd = fd_data;
     handle->metadata_fd = fd_meta;
-    atomic_store(&metadata->gen_count, 0);
     atomic_store(&metadata->file_size, chunk_size);
     atomic_store(&metadata->is_ready, true);
     return true;
@@ -743,7 +741,6 @@ static inline bool write_to_chunk(log_handle_t* handle, uint64_t cursor, const v
 
     uint64_t chunk_offset = cursor - chunk->start_offset;
     memcpy((char*)chunk->mapping + chunk_offset, data, size);
-    atomic_fetch_add(&handle->metadata->gen_count, 1);  // Increment generation count
     atomic_fetch_sub(&chunk->ref_count, 1);
     return true;
 }

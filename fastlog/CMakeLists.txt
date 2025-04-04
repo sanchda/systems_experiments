@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-set(PROJECT_NAME demo)
+set(PROJECT_NAME mmlog_demo)
 project(${PROJECT_NAME} C CXX)
 
 set(CMAKE_C_STANDARD 11)
