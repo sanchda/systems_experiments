@@ -406,6 +406,9 @@ log_handle_t* mmlog_open(const char* filename, size_t chunk_size, uint32_t chunk
         return NULL;
     }
 
+    // Set the head (leave the tail NULL)
+    atomic_store(&handle->chunks.head, handle->chunks.buffer);
+
     return handle;
 }
 
@@ -483,9 +486,6 @@ uint64_t mmlog_checkout(log_handle_t* handle, size_t size)
     }
 
     log_metadata_t* metadata = handle->metadata;
-    if (size > 4096) {
-        printf("size: %lu\n", size);
-    }
     uint64_t start = atomic_fetch_add(&metadata->cursor, size);
     uint64_t end = start + size;
     uint64_t file_size = atomic_load(&metadata->file_size);
@@ -588,8 +588,6 @@ inline static chunk_info_t* create_chunk_at_cursor(log_handle_t* handle, uint64_
     chunk->mapping = mmap(NULL, chunk->size, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data_fd, chunk->start_offset);
 
     if (MAP_FAILED == chunk->mapping) {
-        printf("cursor: %lu\n", cursor);
-        printf("handle->metadata->chunk_size: %u\n", handle->metadata->chunk_size);
         mmlog_errno = MMLOG_ERR_CREATE_CHUNK_AT_CURSOR_MMAP;
         free(chunk);
         return NULL;
