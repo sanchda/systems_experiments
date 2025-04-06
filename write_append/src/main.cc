@@ -67,7 +67,7 @@ class FileAppender {
 
             case AppendMethod::AIO_APPEND:
                 fd_ = open(filename.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
-                memset(&aio_ctx_, 0, sizeof(aio_ctx_));
+                memset(&aio_ctx_, 0, sizeof(io_context_t));
                 io_setup(128, &aio_ctx_);
                 return fd_ != -1;
             case AppendMethod::MMLOG_APPEND:
@@ -231,101 +231,90 @@ BenchmarkResult RunBenchmark(AppendMethod method, int num_processes, int ops_per
     BenchmarkResult result;
     result.method_name = appender.GetMethodName();
     result.duration_ms = duration.count();
-    int main(int argc, char* argv[])
-    {
-        // Run benchmarks for each method with different configurations
-        const int NUM_PROCESSES = 4;
-        const int OPS_PER_PROCESS = 100000;
-        const size_t DATA_SIZE = 128;
+    // Calculate time per call in microseconds
+    result.time_per_call_us = (duration.count() * 1000.0) / (num_processes * ops_per_process);
+    // Calculate throughput in GB/s
+    double total_bytes = static_cast<double>(num_processes) * ops_per_process * data_size;
+    double seconds = duration.count() / 1000.0;
+    result.throughput_gbps = (total_bytes / seconds) / (1024 * 1024 * 1024) * 8;
+    return result;
+    return result;
+}
 
-        // Process command-line arguments
-        bool run_all = argc == 1;  // Run all if no args provided
-        std::vector<std::string> benchmarks_to_run;
+int main(int argc, char* argv[])
+{
+    // Run benchmarks for each method with different configurations
+    const int NUM_PROCESSES = 4;
+    const int OPS_PER_PROCESS = 10000;
+    const size_t DATA_SIZE = 4095;
 
-        // Check for help flag
-        for (int i = 1; i < argc; i++) {
-            std::string arg = argv[i];
-            if (arg == "-h" || arg == "--help") {
-                std::cout << "Usage: " << argv[0] << " [benchmark_names...]\n"
-                          << "Available benchmarks:\n"
-                          << "  mmlog   - Memory-mapped log\n"
-                          << "  write   - O_APPEND with write()\n"
-                          << "  writev  - writev() with O_APPEND\n"
-                          << "  fwrite  - FILE streams (fwrite)\n"
-                          << "  direct  - Direct I/O (O_DIRECT)\n"
-                          << "  aio     - Linux AIO\n"
-                          << "  all     - Run all benchmarks\n"
-                          << "If no arguments are provided, all benchmarks will be run.\n";
-                return 0;
-            } else if (arg == "all") {
-                run_all = true;
-            } else {
-                benchmarks_to_run.push_back(arg);
-            }
+    // Process command-line arguments
+    bool run_all = argc == 1;  // Run all if no args provided
+    std::vector<std::string> benchmarks_to_run;
+
+    // Check for help flag
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: " << argv[0] << " [benchmark_names...]\n"
+                      << "Available benchmarks:\n"
+                      << "  mmlog   - Memory-mapped log\n"
+                      << "  write   - O_APPEND with write()\n"
+                      << "  writev  - writev() with O_APPEND\n"
+                      << "  fwrite  - FILE streams (fwrite)\n"
+                      << "  direct  - Direct I/O (O_DIRECT)\n"
+                      << "  aio     - Linux AIO\n"
+                      << "  all     - Run all benchmarks\n"
+                      << "If no arguments are provided, all benchmarks will be run.\n";
+            return 0;
+        } else if (arg == "all") {
+            run_all = true;
+        } else {
+            benchmarks_to_run.push_back(arg);
         }
-
-        std::cout << "Running benchmarks with " << NUM_PROCESSES << " processes, " << OPS_PER_PROCESS
-                  << " operations per process, " << DATA_SIZE << " bytes per operation\n"
-                  << std::endl;
-
-        // Print markdown table header
-        std::cout << "| Category | Total Time (ms) | Time per Call (μs) | Throughput (GB/s) |" << std::endl;
-        std::cout << "|----------|----------------|-------------------|------------------|" << std::endl;
-
-        std::vector<BenchmarkResult> results;
-
-        // Run selected benchmarks
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "mmlog") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::MMLOG_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "write") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::WRITE_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "writev") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::WRITEV_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "fwrite") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::FWRITE_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "direct") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::DIRECT_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        if (run_all ||
-            std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "aio") != benchmarks_to_run.end()) {
-            results.push_back(RunBenchmark(AppendMethod::AIO_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
-        }
-
-        // Output all results in markdown table format
-        for (const auto& result : results) {
-            std::cout << "| " << result.method_name << " | " << result.duration_ms << " | " << std::fixed
-                      << std::setprecision(2) << result.time_per_call_us << " | " << std::fixed << std::setprecision(3)
-                      << result.throughput_gbps << " |" << std::endl;
-        }
-
-        return 0;
     }
-    std::cout << std::endl;
-}
 
-if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "direct") != benchmarks_to_run.end()) {
-    RunBenchmark(AppendMethod::DIRECT_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE);
-    std::cout << std::endl;
-}
+    std::cout << "Running benchmarks with " << NUM_PROCESSES << " processes, " << OPS_PER_PROCESS
+              << " operations per process, " << DATA_SIZE << " bytes per operation\n"
+              << std::endl;
 
-if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "aio") != benchmarks_to_run.end()) {
-    RunBenchmark(AppendMethod::AIO_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE);
-    std::cout << std::endl;
-}
+    // Print markdown table header
+    std::cout << "| Category | Total Time (ms) | Time per Call (μs) | Throughput (GB/s) |" << std::endl;
+    std::cout << "|----------|----------------|-------------------|------------------|" << std::endl;
 
-return 0;
+    std::vector<BenchmarkResult> results;
+
+    // Run selected benchmarks
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "mmlog") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::MMLOG_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "write") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::WRITE_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "writev") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::WRITEV_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "fwrite") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::FWRITE_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "direct") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::DIRECT_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    if (run_all || std::find(benchmarks_to_run.begin(), benchmarks_to_run.end(), "aio") != benchmarks_to_run.end()) {
+        results.push_back(RunBenchmark(AppendMethod::AIO_APPEND, NUM_PROCESSES, OPS_PER_PROCESS, DATA_SIZE));
+    }
+
+    // Output all results in markdown table format
+    for (const auto& result : results) {
+        std::cout << "| " << result.method_name << " | " << result.duration_ms << " | " << std::fixed
+                  << std::setprecision(2) << result.time_per_call_us << " | " << std::fixed << std::setprecision(3)
+                  << result.throughput_gbps << " |" << std::endl;
+    }
+
+    return 0;
 }
