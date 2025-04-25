@@ -12,7 +12,9 @@
 #include <unistd.h>
 
 #ifdef __APPLE__
-#  define MSG_NOSIGNAL 0
+#  ifndef MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#  endif
 #elif __linux__
 #  define SO_NOSIGPIPE 0
 #else
@@ -48,6 +50,7 @@ int main(int argc, char** argv) {
   if(-1 == (lfd = socket(AF_INET, SOCK_STREAM, SO_NOSIGPIPE))            ||
      -1 == bind(lfd, (struct sockaddr *)&sa, sizeof(struct sockaddr_in)) ||
      -1 == listen(lfd, 1000)) {
+    printf("ERROR %s", strerror(errno));
     return printf("Couldn't bind/listen to port %d\n", port), -1;
   }
 

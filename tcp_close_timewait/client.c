@@ -14,7 +14,9 @@
 #include <arpa/inet.h>
 
 #ifdef __APPLE__
-#  define MSG_NOSIGNAL 0
+#  ifndef MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#  endif
 #elif __linux__
 #  define SO_NOSIGPIPE 0
 #else
