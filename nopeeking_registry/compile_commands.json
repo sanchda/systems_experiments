@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/ubuntu/dev/systems_experiments/nopeeking_registry/target",
+  "command": "/usr/bin/cc  -I/home/ubuntu/dev/systems_experiments/nopeeking_registry/include -O2 -g -DNDEBUG -std=gnu11 -Wall -Wextra -Wpedantic -o CMakeFiles/nopeeking.dir/src/main.c.o -c /home/ubuntu/dev/systems_experiments/nopeeking_registry/src/main.c",
+  "file": "/home/ubuntu/dev/systems_experiments/nopeeking_registry/src/main.c",
+  "output": "CMakeFiles/nopeeking.dir/src/main.c.o"
+},
+{
+  "directory": "/home/ubuntu/dev/systems_experiments/nopeeking_registry/target",
+  "command": "/usr/bin/cc  -I/home/ubuntu/dev/systems_experiments/nopeeking_registry/include -O2 -g -DNDEBUG -std=gnu11 -Wall -Wextra -Wpedantic -o CMakeFiles/nopeeking.dir/src/nopeeking.c.o -c /home/ubuntu/dev/systems_experiments/nopeeking_registry/src/nopeeking.c",
+  "file": "/home/ubuntu/dev/systems_experiments/nopeeking_registry/src/nopeeking.c",
+  "output": "CMakeFiles/nopeeking.dir/src/nopeeking.c.o"
+}
+]

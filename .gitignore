@@ -1,1 +1,28 @@
-*/a.out
+# Common build dirs
+**/build/
+
+# Binary files
+*.so
+*.a
+*.o
+*.dwo
+a.out
+*.dylib
+test
+main
+foo
+
+# vim temps
+*.swp
+*.swo
+*.swx
+
+# Debug stuff
+perf.data
+perf.data.old
+.gdb_history
+
+# WIP
+interrupting_exceptions/**
+simple_ringbuffer/**
+simple_server/**
