@@ -1,0 +1,55 @@
+BEGIN {
+  printf("Dumping recvfrom data... Hit Ctrl-C to end.\n");
+}
+
+tracepoint:syscalls:sys_enter_recvfrom {
+  @starttime[tid] = nsecs;
+  @buf[tid] = args->ubuf;
+  @fd[tid] = args->fd;
+  @size[tid] = args->size;
+  @flags[tid] = args->flags;
+}
+
+tracepoint:syscalls:sys_exit_recvfrom /@starttime[tid]/ {
+  $ret = args->ret;
+  $elapsed_us = (nsecs - @starttime[tid]) / 1000;
+
+  if ($ret > 0) {
+    $data = str(@buf[tid]);
+    printf("%dus [%d:%d(%s)] %d = recvfrom(%d, %d, %d):%s\n",
+             $elapsed_us,
+             pid,
+             tid,
+             comm,
+             $ret,
+             @fd[tid],
+             @size[tid],
+             @flags[tid],
+             $data);
+  } else {
+    printf("%dus [%d:%d(%s)] %d = recvfrom(%d, %d, %d)\n",
+             $elapsed_us,
+             pid,
+             tid,
+             comm,
+             $ret,
+             @fd[tid],
+             @size[tid],
+             @flags[tid]);
+  }
+
+  delete(@buf[tid]);
+  delete(@fd[tid]);
+  delete(@starttime[tid]);
+  delete(@size[tid]);
+  delete(@flags[tid]);
+}
+
+END {
+  clear(@buf);
+  clear(@fd);
+  clear(@starttime);
+  clear(@size);
+  clear(@flags);
+}
+
