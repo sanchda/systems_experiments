@@ -19,7 +19,6 @@ int create_server_socket(int port) {
     int server_fd;
     struct sockaddr_in address;
 
-    // Create socket
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
         perror("socket failed");
         exit(EXIT_FAILURE);
@@ -30,12 +29,10 @@ int create_server_socket(int port) {
         exit(EXIT_FAILURE);
     }
 
-    // Setup server address structure
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    // Bind + listen
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
@@ -49,13 +46,10 @@ int create_server_socket(int port) {
     return server_fd;
 }
 
-// Function to run a client
-// Function to run a client with multiple connections
 void run_client(const char *host, int port, int connections_per_client) {
     int *sockets = malloc(connections_per_client * sizeof(int));
     struct sockaddr_in serv_addr;
 
-    // Initialize server address structure once
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
@@ -70,8 +64,6 @@ void run_client(const char *host, int port, int connections_per_client) {
             perror("Socket creation error");
             exit(EXIT_FAILURE);
         }
-
-        // Connect
         if (connect(sockets[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
             perror("Connection failed");
             exit(EXIT_FAILURE);
@@ -79,14 +71,9 @@ void run_client(const char *host, int port, int connections_per_client) {
     }
 
     // Blocking read only on the last socket
+    // Don't close anything, don't free anything
     char buffer[1];
-    read(sockets[connections_per_client - 1], buffer, 1);  // Will block until server closes
-
-    // Close all sockets
-    for (int i = 0; i < connections_per_client; i++) {
-        close(sockets[i]);
-    }
-    free(sockets);
+    read(sockets[connections_per_client - 1], buffer, 1);
     exit(EXIT_SUCCESS);
 }
 
@@ -94,9 +81,9 @@ void run_client(const char *host, int port, int connections_per_client) {
 void spawn_clients(const char *host, int port, int total_connections) {
     int nprocs = get_nprocs();
     int num_clients = nprocs - 1;
-    if (num_clients <= 0) num_clients = 1;
+    if (num_clients <= 0) num_clients = 1; // just in case, but also lol
 
-    int connections_per_client = (total_connections + num_clients - 1) / num_clients; // Ceiling division
+    int connections_per_client = (total_connections + num_clients - 1) / num_clients;
 
     printf("System has %d processors\n", nprocs);
     printf("Spawning %d client processes with %d connections each (total: %d)...\n",
@@ -111,15 +98,11 @@ void spawn_clients(const char *host, int port, int total_connections) {
         }
 
         if (pid == 0) {
-            // Child process
-            // Calculate actual connections for this client (handle remainder)
             int my_connections = connections_per_client;
             if (i == num_clients - 1) {
-                // Last client might need to handle fewer connections
                 my_connections = total_connections - (connections_per_client * (num_clients - 1));
             }
             run_client(host, port, my_connections);
-            // Child should not return from run_client
             exit(EXIT_SUCCESS);
         }
     }
@@ -134,8 +117,6 @@ void accept_connections(int server_fd, int num_clients) {
     struct timeval start_time, end_time;
 
     printf("Starting to accept connections...\n");
-
-    // Start timer
     gettimeofday(&start_time, NULL);
 
     // Main server loop
@@ -149,7 +130,6 @@ void accept_connections(int server_fd, int num_clients) {
             continue;
         }
 
-        // Store the new client socket
         client_sockets[connection_count] = new_socket;
         connection_count++;
 
@@ -183,13 +163,13 @@ int main(int argc, char *argv[]) {
         num_clients = atoi(argv[2]);
     }
 
-    // Create a server socket and start listening
+    // Aaaaaaand go
     int server_fd = create_server_socket(port);
     spawn_clients(host, port, num_clients);
     accept_connections(server_fd, num_clients);
-    close(server_fd);
 
-    // Parent is bash, so no need to wait on clients--it'll reap them
+    // Parent is a shell, so no need to wait on clients--it'll reap them
+    // (this statement is about zombies)
     return 0;
 }
 
