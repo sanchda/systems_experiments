@@ -1,0 +1,15 @@
+lines=10000000 avg_line=71.9 flush_every=100000 contexts<=768
+parse   45.3 ns/line
+raw     89.3 ns/line  count+gauge lines 74979 -> 13762 per flush (5.4x)  total out 38.8% of in
+sort   107.4 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+sum     75.9 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+lines=10000000 avg_line=72.5 flush_every=100000 contexts<=12288
+parse   38.9 ns/line
+raw    100.2 ns/line  count+gauge lines 74979 -> 63594 per flush (1.2x)  total out 88.6% of in
+sort   112.3 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+sum     82.4 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+lines=10000000 avg_line=73.6 flush_every=100000 contexts<=196608
+parse   38.2 ns/line
+raw     98.3 ns/line  count+gauge lines 74979 -> 71890 per flush (1.0x)  total out 96.9% of in
+sort   118.3 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+sum     87.4 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
