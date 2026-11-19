@@ -42,3 +42,20 @@ Points were run one configuration after another (not interleaved), so slow drift
 * `maxgap_ms` is the largest gap between *sampled* receives and does not show what caused it. I did not run `jitter` concurrently or record scheduler stats per trial,
   so attributing the stalls to the hypervisor (vs guest scheduling) is not established here.
 * Only UDP, 1 metric/datagram. Batched and UDS points were not repeated at this length.
+
+## Open question: why is there any loss at 250k/s?
+The buffer holds 222 datagrams = ~0.9 ms at 250k/s, so any pause in the server's reading longer than that drops data. Observed receive gaps
+(blocking, 250k/s): median worst gap 3.4 ms, max 4.7 ms. What stops the server for milliseconds is **not established**. Hypotheses, most likely first:
+1. Host-level vCPU stalls (descheduled vCPU, or a late wakeup of a halted vCPU). Consistent with: busy-poll cuts loss ~40x but not to zero;
+   `jitter -m sleep` saw >1 ms late wakeups 3-5 times per 5 s with no sockets. Not confirmed: `/proc/stat` steal is 0 on all CPUs, but KVM guests often don't report steal, so this is no evidence either way.
+2. Guest-side noise on CPU 2 (ticks, RCU, kworkers, ksoftirqd, other processes placed on the idle CPU).
+3. Client load: 1 client instead of 4 cut median loss ~5x, via host contention or softirq/wakeup work. Not separated.
+Ruled out earlier (Readme 3b): counting error, a bursty client being the main cause.
+
+Planned tests, not yet run:
+* Keep per-trial server scheduler stats (`t0_oncpu_ms`, `t0_runq_wait_ms`, slices), which the long run discarded. Mostly run-queue wait suggests guest scheduling; neither running nor waiting suggests a late wakeup (host).
+* Spin-mode `jitter` on several CPUs at once: gaps aligned across CPUs suggest a whole-guest host event.
+* Diff `/proc/interrupts` and `/proc/softirqs` for CPU 2 across a run.
+* Move the server to another CPU and see whether loss follows the CPU.
+* Interleave configurations and repeat at another time, to separate config effects from host drift (the 3 s runs averaged ~0.027% vs 0.080% in the 30 s run).
+* Optional: per-thread sequence numbers and send timestamps in the payload (behind a new flag), to get the exact lost ranges and burst windows. Gives loss shape, not cause.
