@@ -36,9 +36,9 @@ Micro-costs (`hw_microbench.txt`, 3 runs): `getppid` ~90-100 ns, `clock_gettime`
 ## What differed
 * **UDP single-socket capacity is ~1.0M/s delivered here** (busy-poll flat out 0.93-0.98M/s delivered at 41-45% loss; blocking ~0.9-1.08M/s), versus ~1.7M/s on the Readme box.
   1M/s offered already loses 6-13%; 500k/s is clean (<=0.06%).
-* **The 3b blocking-server puzzle did not reproduce.** At 250k/s the blocking server lost 0.002-0.052% (5 trials, `3b_baseline_block.txt`); Readme's baseline lost 3k-26k datagrams per trial.
-  1 client: 0 loss. `-s 4194304` (capped at 2x rmem_max, ~2x slack): 0 loss. Busy-poll: 0 loss. Blocking vs busy-poll p99 wait: ~30 us vs ~8-12 us.
-  Blocking-vs-busy-poll loss below capacity is indistinguishable in the main sweeps (e.g. 500k/s: 0.000-0.063% vs 0.000%).
+* **The 3b blocking-server puzzle is much weaker here than on the Readme box, but not absent.** In these 3 s runs, at 250k/s the blocking server lost 0.002-0.052% (5 trials, `3b_baseline_block.txt`) and busy-poll, one client and the doubled buffer all showed zero loss.
+  **Correction:** the 30 s x 10 trial follow-up (`../results_8vcpu_long/REPORT.md`) shows blocking loses data in every trial (median 0.080%, drops in 42% of seconds) against 0.002% for busy-poll,
+  so the 3 s points were too short to see it. Readme baseline: 1.6-3.7%.
 * **Scheduler jitter is small here** (`jitter.txt`): spinning thread on CPU 2 max gap 268-718 us, nothing >1 ms in 5 s; sleeper woke >1 ms late 3-5 times per 5 s (4.4-12.7 ms total),
   and with 4 spinners 0-4 times. The 2-vCPU box had 11-16 events. `debug/who.c` produced no stale-heartbeat events in 30 s.
 * UDS non-blocking single-fd loses more than on the Readme box: 1M/s offered loses 41-45% (Readme: 8-10%), and busy-poll is no better (45-54%). Delivery tops out around 0.5-0.8M/s. I did not investigate why.
