@@ -1,0 +1,70 @@
+=== trial 1: sk_drops(server)=drops=10621 snmp RcvbufErrors delta=10621 | t0_oncpu_ms=2731.9 t0_runq_wait_ms=28.53
+  srv samples=589379 final_drops=10621 top srv gaps (us): [4317, 2194, 1605, 458, 457]
+  client late events (>50us) = 92160, top (us): [14461, 14460, 14458, 14456, 14455]
+  drop +1 at t=270.5ms rmem=213120 wait=593us | max srv gap in prior 3ms: 17us ending 44us before | client late events within 5ms before: 1390 max 2954us
+  drop +2 at t=270.5ms rmem=213120 wait=595us | max srv gap in prior 3ms: 17us ending 49us before | client late events within 5ms before: 1390 max 2954us
+  drop +2 at t=270.5ms rmem=213120 wait=597us | max srv gap in prior 3ms: 17us ending 54us before | client late events within 5ms before: 1390 max 2954us
+  drop +1 at t=270.5ms rmem=213120 wait=599us | max srv gap in prior 3ms: 17us ending 59us before | client late events within 5ms before: 1390 max 2954us
+  drop +2 at t=270.5ms rmem=213120 wait=601us | max srv gap in prior 3ms: 17us ending 64us before | client late events within 5ms before: 1390 max 2954us
+  drop +2 at t=270.5ms rmem=213120 wait=603us | max srv gap in prior 3ms: 17us ending 68us before | client late events within 5ms before: 1391 max 2954us
+  gaps>400us: 9; total drops 10621
+    gap    4317us  thread_cpu_during_gap      17us  drops_in_gap   641  wait_after   4315us
+    gap    2194us  thread_cpu_during_gap      24us  drops_in_gap   215  wait_after   2188us
+    gap    1605us  thread_cpu_during_gap      80us  drops_in_gap     0  wait_after     10us
+    gap     458us  thread_cpu_during_gap      18us  drops_in_gap     0  wait_after    852us
+=== trial 2: sk_drops(server)=drops=31071 snmp RcvbufErrors delta=31071 | t0_oncpu_ms=2694.3 t0_runq_wait_ms=116.15
+  srv samples=568929 final_drops=31071 top srv gaps (us): [5168, 5033, 4568, 4152, 4052]
+  client late events (>50us) = 101761, top (us): [17625, 17624, 17624, 17623, 17622]
+  drop +2 at t=6.2ms rmem=213120 wait=1741us | max srv gap in prior 3ms: 65us ending 521us before | client late events within 5ms before: 567 max 2921us
+  drop +2 at t=6.2ms rmem=213120 wait=1746us | max srv gap in prior 3ms: 65us ending 534us before | client late events within 5ms before: 568 max 2927us
+  drop +2 at t=6.3ms rmem=213120 wait=1750us | max srv gap in prior 3ms: 65us ending 548us before | client late events within 5ms before: 567 max 2930us
+  drop +1 at t=6.3ms rmem=213120 wait=1756us | max srv gap in prior 3ms: 65us ending 560us before | client late events within 5ms before: 566 max 2935us
+  drop +2 at t=6.3ms rmem=213120 wait=1761us | max srv gap in prior 3ms: 65us ending 573us before | client late events within 5ms before: 566 max 2942us
+  drop +1 at t=6.3ms rmem=213120 wait=1765us | max srv gap in prior 3ms: 65us ending 585us before | client late events within 5ms before: 567 max 2947us
+  gaps>400us: 59; total drops 31071
+    gap    5168us  thread_cpu_during_gap    1068us  drops_in_gap     0  wait_after    842us
+    gap    5033us  thread_cpu_during_gap      31us  drops_in_gap   884  wait_after   5499us
+    gap    4568us  thread_cpu_during_gap      28us  drops_in_gap   366  wait_after   1933us
+    gap    4152us  thread_cpu_during_gap      42us  drops_in_gap   763  wait_after   4818us
+=== trial 3: sk_drops(server)=drops=22881 snmp RcvbufErrors delta=22881 | t0_oncpu_ms=2722.3 t0_runq_wait_ms=21.57
+  srv samples=577119 final_drops=22881 top srv gaps (us): [4038, 4038, 2922, 2734, 2039]
+  client late events (>50us) = 96829, top (us): [12846, 12844, 12842, 12841, 12839]
+  drop +1 at t=3.8ms rmem=159360 wait=1210us | max srv gap in prior 3ms: 51us ending 1849us before | client late events within 5ms before: 621 max 1026us
+  drop +1 at t=4.2ms rmem=213120 wait=1304us | max srv gap in prior 3ms: 51us ending 2255us before | client late events within 5ms before: 690 max 1087us
+  drop +2 at t=4.2ms rmem=213120 wait=1283us | max srv gap in prior 3ms: 51us ending 2263us before | client late events within 5ms before: 692 max 1087us
+  drop +2 at t=4.2ms rmem=213120 wait=1284us | max srv gap in prior 3ms: 51us ending 2273us before | client late events within 5ms before: 694 max 1088us
+  drop +1 at t=4.2ms rmem=213120 wait=1284us | max srv gap in prior 3ms: 51us ending 2281us before | client late events within 5ms before: 695 max 1091us
+  drop +2 at t=4.2ms rmem=213120 wait=1283us | max srv gap in prior 3ms: 51us ending 2289us before | client late events within 5ms before: 696 max 1095us
+  gaps>400us: 9; total drops 22881
+    gap    4038us  thread_cpu_during_gap      37us  drops_in_gap   790  wait_after   4914us
+    gap    4038us  thread_cpu_during_gap      37us  drops_in_gap   753  wait_after   4880us
+    gap    2922us  thread_cpu_during_gap      37us  drops_in_gap   547  wait_after   3778us
+    gap    2734us  thread_cpu_during_gap      25us  drops_in_gap     0  wait_after     40us
+=== trial 4: sk_drops(server)=drops=20035 snmp RcvbufErrors delta=20035 | t0_oncpu_ms=2712.9 t0_runq_wait_ms=25.18
+  srv samples=579965 final_drops=20035 top srv gaps (us): [3022, 2154, 1936, 983, 535]
+  client late events (>50us) = 105307, top (us): [13605, 13604, 13604, 13603, 13603]
+  drop +3 at t=5.3ms rmem=213120 wait=1457us | max srv gap in prior 3ms: 52us ending 97us before | client late events within 5ms before: 604 max 2420us
+  drop +2 at t=5.3ms rmem=213120 wait=1451us | max srv gap in prior 3ms: 52us ending 110us before | client late events within 5ms before: 606 max 2420us
+  drop +3 at t=5.3ms rmem=213120 wait=1456us | max srv gap in prior 3ms: 52us ending 123us before | client late events within 5ms before: 606 max 2421us
+  drop +2 at t=5.4ms rmem=213120 wait=1459us | max srv gap in prior 3ms: 52us ending 134us before | client late events within 5ms before: 607 max 2423us
+  drop +2 at t=5.4ms rmem=213120 wait=1461us | max srv gap in prior 3ms: 52us ending 144us before | client late events within 5ms before: 608 max 2424us
+  drop +2 at t=5.4ms rmem=213120 wait=1461us | max srv gap in prior 3ms: 52us ending 154us before | client late events within 5ms before: 608 max 2424us
+  gaps>400us: 8; total drops 20035
+    gap    3022us  thread_cpu_during_gap      44us  drops_in_gap   856  wait_after   4223us
+    gap    2154us  thread_cpu_during_gap      19us  drops_in_gap     0  wait_after      3us
+    gap    1936us  thread_cpu_during_gap      24us  drops_in_gap     0  wait_after   1924us
+    gap     983us  thread_cpu_during_gap      21us  drops_in_gap    13  wait_after   1122us
+=== trial 5: sk_drops(server)=drops=20513 snmp RcvbufErrors delta=20513 | t0_oncpu_ms=2741.8 t0_runq_wait_ms=45.28
+  srv samples=579487 final_drops=20513 top srv gaps (us): [4035, 4035, 3623, 2837, 2192]
+  client late events (>50us) = 104029, top (us): [12732, 12731, 12731, 12731, 12731]
+  drop +1 at t=37.5ms rmem=213120 wait=590us | max srv gap in prior 3ms: 32us ending 1832us before | client late events within 5ms before: 1302 max 11019us
+  drop +1 at t=37.5ms rmem=160320 wait=592us | max srv gap in prior 3ms: 32us ending 1838us before | client late events within 5ms before: 1303 max 11019us
+  drop +1 at t=37.7ms rmem=213120 wait=636us | max srv gap in prior 3ms: 32us ending 2031us before | client late events within 5ms before: 1316 max 11019us
+  drop +1 at t=37.7ms rmem=213120 wait=636us | max srv gap in prior 3ms: 32us ending 2035us before | client late events within 5ms before: 1316 max 11019us
+  drop +1 at t=37.7ms rmem=213120 wait=637us | max srv gap in prior 3ms: 32us ending 2039us before | client late events within 5ms before: 1316 max 11019us
+  drop +1 at t=37.7ms rmem=213120 wait=639us | max srv gap in prior 3ms: 32us ending 2046us before | client late events within 5ms before: 1316 max 11019us
+  gaps>400us: 35; total drops 20513
+    gap    4035us  thread_cpu_during_gap      33us  drops_in_gap   692  wait_after   4154us
+    gap    4035us  thread_cpu_during_gap      17us  drops_in_gap     0  wait_after    445us
+    gap    3623us  thread_cpu_during_gap      28us  drops_in_gap   502  wait_after   3617us
+    gap    2837us  thread_cpu_during_gap      23us  drops_in_gap   345  wait_after   2830us

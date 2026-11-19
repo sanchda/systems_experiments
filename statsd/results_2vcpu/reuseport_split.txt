@@ -1,0 +1,18 @@
+udp R4 hash flows=1 | per_sock=0,0,299800,0 drops=200
+udp R4 hash flows=1 | per_sock=0,299776,0,0 drops=224
+udp R4 hash flows=1 | per_sock=0,0,299712,0 drops=288
+udp R4 hash flows=2 | per_sock=0,0,149462,149212 drops=1326
+udp R4 hash flows=2 | per_sock=0,150000,149956,0 drops=44
+udp R4 hash flows=2 | per_sock=0,150000,0,149860 drops=140
+udp R4 hash flows=4 | per_sock=74833,0,74888,148966 drops=1313
+udp R4 hash flows=4 | per_sock=149698,0,150000,0 drops=302
+udp R4 hash flows=4 | per_sock=74997,219294,0,0 drops=5709
+udp R4 hash flows=8 | per_sock=37500,0,146203,111684 drops=4613
+udp R4 hash flows=8 | per_sock=111717,112311,75000,0 drops=972
+udp R4 hash flows=8 | per_sock=111768,37500,111929,37500 drops=1303
+udp R4 cbpf flows=2 on cpu0,cpu1 | per_sock=149975,150000,0,0 drops=25
+udp R4 cbpf flows=2 on cpu0,cpu1 | per_sock=149803,149727,0,0 drops=470
+udp R4 cbpf flows=2 on cpu0,cpu1 | per_sock=149802,149948,0,0 drops=250
+udp R2 cbpf flows=2 on cpu0,cpu1 | per_sock=150000,149972 drops=28
+udp R2 cbpf flows=2 on cpu0,cpu1 | per_sock=150000,150000 drops=0
+udp R2 cbpf flows=2 on cpu0,cpu1 | per_sock=149983,150000 drops=17

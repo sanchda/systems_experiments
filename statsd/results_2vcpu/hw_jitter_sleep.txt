@@ -1,0 +1,8 @@
+# sleep jitter on cpu0, idle other cpu (3 x 5s)
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=26448 p99=156us max=4723us  >1ms: 15 events, 29.3 ms total
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=26667 p99=156us max=2610us  >1ms: 16 events, 22.6 ms total
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=26633 p99=164us max=3022us  >1ms: 11 events, 20.2 ms total
+# sleep jitter on cpu0 with a spinner on cpu1 (3 x 5s)
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=27373 p99=156us max=2260us  >1ms: 9 events, 11.7 ms total
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=26861 p99=164us max=1998us  >1ms: 10 events, 13.0 ms total
+sleep cpu=0 load=0 secs=5 events(>20us gap or any wake)=26367 p99=172us max=3365us  >1ms: 30 events, 51.5 ms total

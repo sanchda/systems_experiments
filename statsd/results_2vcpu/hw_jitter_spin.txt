@@ -1,0 +1,2 @@
+spin  cpu=0 load=0 secs=5 events(>20us gap or any wake)=361 p99=70us max=79us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 1.45 ms, involuntary csw 27
+spin  cpu=1 load=0 secs=5 events(>20us gap or any wake)=515 p99=721us max=2915us  >1ms: 5 events, 7.7 ms total | guest view: cpu/wall 99.9%, runq wait 2.69 ms, involuntary csw 56

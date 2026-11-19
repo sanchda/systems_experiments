@@ -293,3 +293,36 @@ Caveats
 * **The client copies prebuilt lines.** A real client formats each line (snprintf, ~100+ ns), which would make single-thread batched client rates much lower than shown here.
 * **Single host, default buffers.** Raising `SO_RCVBUF` (up to `rmem_max` = 4 MiB) buys time, not throughput, and adds wait.
 * **CPU placement.** Sweeps pin the server to CPU 2. Reuseport runs pin server threads to CPUs 0-3, which share a core with whatever lands on CPU 0.
+
+
+Re-run on a 2-vCPU KVM guest
+---
+The experiments above were repeated on very different hardware to see what carries over. Full tables, raw output and caveats: `results_2vcpu/REPORT.md`. Scripts: `sweep2.sh`, `run_all2.sh` (server on CPU 0, clients on CPU 1) and `hwbench.c` (micro-costs).
+
+| | this box | box above |
+|---|---|---|
+| CPU | Xeon Skylake-SP, 2 vCPUs, no SMT, 3.7 GiB | i7-11800H, 8 vCPUs |
+| Virtualization | KVM, PTI + IBRS mitigations | WSL2 / Hyper-V |
+| Kernel | 6.8.0-138 (Ubuntu) | 6.18.58 |
+| `rmem_max` | 212992 | 4194304 |
+| `net.unix.max_dgram_qlen` | **512** | 10 |
+
+Measured costs: bare syscall ~860 ns, `send()` of 60 B ~2.9 us, `recv()` ~1.5 us, cross-CPU wakeup round trip ~45 us (same CPU ~8 us). A 100 us sleeper woke more than 1 ms late 11-16 times per 5 s on an idle CPU.
+
+**What reproduced**
+* UDP buffer capacity is hardware independent: 222 / 93 / 13 datagrams for 60 / 1432 / 8192 B (above: 221 / 92 / 13).
+* Blocking vs busy-poll: at 200k/s the blocking server lost 0.47-3.0% (p99 wait ~0.8-1.6 ms), busy-poll 0.006-0.58% (p99 ~10-20 us).
+* Idle-server drops: the socket drop counter equals `RcvbufErrors` in all 5 trials, and drops arrive in bursts after 2-5 ms gaps with ~0 server CPU. `drops ~ gap x rate - 222` holds (4317 us gap: 641 predicted, 641 counted).
+* Batching: UDP 1432 B reaches ~6M metrics/s and 8192 B ~20M/s at <=~0.6% loss with a busy-poll server, from ~0.29M/s unbatched.
+* Aggregation ratios are identical (5.4x raw vs 130x sorted or summed at H=16; 1.2x vs 8.1x; 1.0x vs 2.3x). Cost per line is 2.5-3x higher (parse ~110 ns).
+* `SO_REUSEPORT`: hash steering is lumpy (1 flow always lands on 1 socket, 2-8 flows leave sockets idle), CPU steering is even but limited by the number of CPUs.
+* UDS blocking senders never lose data. Four paths delivered ~525k/s against ~227k/s for one.
+
+**What differed**
+* Everything is 3-5x slower, and one client CPU cannot saturate the server, so the one-metric tests here are client-bound (~220k/s blocking, ~290k/s busy-poll). No server capacity figure came out of them.
+* UDS held 278 datagrams at 60 B, not 11, consistent with `max_dgram_qlen=512` (byte-limit explanation not checked against 6.8 source). The four-sender blocking collapse (~85k/s above) did not appear (~290k/s), but the clients shared one CPU, so the cause is not separated.
+* UDS `SO_REUSEPORT` returns `EOPNOTSUPP` on this 6.8 kernel, which contradicts the note above that 6.8-6.10 accept it silently. Ubuntu probably backported the change.
+* The client logged ~100k late sends per trial with stalls up to 17 ms, so a bursty client is **not** ruled out here, unlike above.
+* The 4 MiB `SO_RCVBUF` test could not be repeated (`rmem_max` caps it; the request only doubled the buffer to ~2.2 ms of slack, and loss only fell to 0.3-1.4%).
+
+**Not reproduced:** the queue-depth time series, `debug/who.c`, the 4-socket reuseport throughput comparison, and the `sysctl` experiment (no root). Non-blocking UDS flat-out runs with several clients are not meaningful on 2 CPUs.

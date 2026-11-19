@@ -1,0 +1,28 @@
+# lscpu / kernel
+CPU(s):                                  2
+Model name:                              Intel Xeon Processor (Skylake, IBRS, no TSX)
+Thread(s) per core:                      1
+Hypervisor vendor:                       KVM
+L2 cache:                                8 MiB (2 instances)
+L3 cache:                                16 MiB (1 instance)
+6.8.0-138-generic
+
+# probe
+kernel 6.8.0-138-generic
+AF_INET/SOCK_DGRAM, reuseport=0:
+  bind #1: ok
+  bind #2: Address already in use
+AF_INET/SOCK_DGRAM, reuseport=1:
+  setsockopt(SO_REUSEPORT) on AF_INET: ok
+  setsockopt(SO_REUSEPORT) on AF_INET: ok
+  bind #1: ok
+  bind #2: ok
+AF_UNIX/SOCK_DGRAM, reuseport=0:
+  bind #1: ok
+  bind #2: Address already in use
+AF_UNIX/SOCK_DGRAM, reuseport=1:
+  setsockopt(SO_REUSEPORT) on AF_UNIX: Operation not supported
+  setsockopt(SO_REUSEPORT) on AF_UNIX: Operation not supported
+  bind #1: ok
+  bind #2: Address already in use
+net.unix.max_dgram_qlen = 512

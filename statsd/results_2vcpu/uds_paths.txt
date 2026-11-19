@@ -1,0 +1,18 @@
+nb 1 path, 1 client                offered/s=   535045 delivered/s=   446282 lost= 16.6%
+nb 1 path, 1 client                offered/s=   444444 delivered/s=   328627 lost= 26.1%
+nb 1 path, 1 client                offered/s=   462321 delivered/s=   319180 lost= 31.0%
+nb 1 path, 4 clients               offered/s=   905797 delivered/s=   222021 lost= 75.5%
+nb 1 path, 4 clients               offered/s=   868810 delivered/s=   184251 lost= 78.8%
+nb 1 path, 4 clients               offered/s=   687285 delivered/s=   157823 lost= 77.0%
+nb 1 path, 4 clients, 4 srv threads offered/s=   479386 delivered/s=   346681 lost= 27.7%
+nb 1 path, 4 clients, 4 srv threads offered/s=   510725 delivered/s=   340997 lost= 33.2%
+nb 1 path, 4 clients, 4 srv threads offered/s=   525210 delivered/s=   347550 lost= 33.8%
+nb 4 paths, 4 clients              offered/s=   946074 delivered/s=   272258 lost= 71.2%
+nb 4 paths, 4 clients              offered/s=   938967 delivered/s=   272035 lost= 71.0%
+nb 4 paths, 4 clients              offered/s=   856164 delivered/s=   254256 lost= 70.3%
+blocking 1 path, 4 clients         offered/s=   227428 delivered/s=   227428 lost=  0.0%
+blocking 1 path, 4 clients         offered/s=   224266 delivered/s=   224266 lost=  0.0%
+blocking 1 path, 4 clients         offered/s=   229516 delivered/s=   229516 lost=  0.0%
+blocking 4 paths, 4 clients        offered/s=   525210 delivered/s=   525210 lost=  0.0%
+blocking 4 paths, 4 clients        offered/s=   525486 delivered/s=   525486 lost=  0.0%
+blocking 4 paths, 4 clients        offered/s=   524934 delivered/s=   524934 lost=  0.0%
