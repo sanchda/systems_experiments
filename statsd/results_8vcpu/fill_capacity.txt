@@ -1,0 +1,18 @@
+== udp 60B
+cli metrics=20000 dgrams=20000 eagain_metrics=0 secs=0.051 metric_per_s=392296 dgram_per_s=392296 avg_line=60.1
+srv dgrams=222 bytes=13347 metrics=222 calls=222 drops=19778 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.6 t0_runq_wait_ms=0.11 t0_slices=7
+== udp 1432B
+cli metrics=20000 dgrams=870 eagain_metrics=0 secs=0.002 metric_per_s=10905185 dgram_per_s=474376 avg_line=60.1
+srv dgrams=93 bytes=128651 metrics=2139 calls=93 drops=777 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.6 t0_runq_wait_ms=0.07 t0_slices=7
+== udp 8192B
+cli metrics=20000 dgrams=148 eagain_metrics=0 secs=0.001 metric_per_s=24580412 dgram_per_s=181895 avg_line=60.1
+srv dgrams=13 bytes=106332 metrics=1768 calls=13 drops=135 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.03 t0_slices=7
+== uds 60B
+cli metrics=278 dgrams=278 eagain_metrics=19722 secs=0.006 metric_per_s=43523 dgram_per_s=43523 avg_line=60.1
+srv dgrams=278 bytes=16721 metrics=278 calls=278 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.7 t0_runq_wait_ms=0.02 t0_slices=6
+== uds 1432B
+cli metrics=2139 dgrams=93 eagain_metrics=17861 secs=0.000 metric_per_s=4960115 dgram_per_s=215657 avg_line=60.1
+srv dgrams=93 bytes=128651 metrics=2139 calls=93 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.01 t0_slices=7
+== uds 8192B
+cli metrics=1768 dgrams=13 eagain_metrics=18232 secs=0.000 metric_per_s=5478518 dgram_per_s=40283 avg_line=60.1
+srv dgrams=13 bytes=106332 metrics=1768 calls=13 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.01 t0_slices=6

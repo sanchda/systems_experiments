@@ -1,0 +1,12 @@
+# spin cpu2
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=403 p99=106us max=268us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.71 ms, involuntary csw 16
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=946 p99=344us max=718us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.62 ms, involuntary csw 18
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=1205 p99=106us max=608us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.53 ms, involuntary csw 17
+# sleep cpu2, no load
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=28688 p99=106us max=1699us  >1ms: 5 events, 7.1 ms total
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=28817 p99=106us max=5782us  >1ms: 4 events, 12.7 ms total
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=29131 p99=102us max=1759us  >1ms: 3 events, 4.4 ms total
+# sleep cpu2, 4 spinners
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=29052 p99=102us max=2257us  >1ms: 2 events, 3.3 ms total
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=28990 p99=102us max=2710us  >1ms: 4 events, 8.3 ms total
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=28835 p99=106us max=950us  >1ms: 0 events, 0.0 ms total

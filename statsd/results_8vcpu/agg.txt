@@ -1,0 +1,33 @@
+## H=16
+lines=10000000 avg_line=71.9 flush_every=100000 contexts<=768
+parse   64.7 ns/line
+raw    230.0 ns/line  count+gauge lines 74979 -> 13762 per flush (5.4x)  total out 38.8% of in
+sort   212.6 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+sum    144.6 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+lines=10000000 avg_line=71.9 flush_every=100000 contexts<=768
+parse   66.1 ns/line
+raw    180.9 ns/line  count+gauge lines 74979 -> 13762 per flush (5.4x)  total out 38.8% of in
+sort   191.1 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+sum    153.7 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+## H=256
+lines=10000000 avg_line=72.5 flush_every=100000 contexts<=12288
+parse   64.3 ns/line
+raw    237.9 ns/line  count+gauge lines 74979 -> 63594 per flush (1.2x)  total out 88.6% of in
+sort   254.5 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+sum    180.1 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+lines=10000000 avg_line=72.5 flush_every=100000 contexts<=12288
+parse   80.5 ns/line
+raw    217.7 ns/line  count+gauge lines 74979 -> 63594 per flush (1.2x)  total out 88.6% of in
+sort   188.5 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+sum    131.7 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+## H=4096
+lines=10000000 avg_line=73.6 flush_every=100000 contexts<=196608
+parse   63.2 ns/line
+raw    205.4 ns/line  count+gauge lines 74979 -> 71890 per flush (1.0x)  total out 96.9% of in
+sort   238.7 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+sum    149.1 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+lines=10000000 avg_line=73.6 flush_every=100000 contexts<=196608
+parse   62.4 ns/line
+raw    208.3 ns/line  count+gauge lines 74979 -> 71890 per flush (1.0x)  total out 96.9% of in
+sort   233.3 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+sum    172.4 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in

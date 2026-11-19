@@ -1,0 +1,21 @@
+syscall   getppid       93 ns
+clock     clock_gettime 32 ns
+udp_send  60B (rx full/dropping)  1545 ns per send
+udp_drain recv 222 queued dgrams  671 ns per recv
+udp_loop  send+recv same thread   1932 ns per pair
+pingpong cpu0<->cpu0  4478 ns round trip
+pingpong cpu0<->cpu1  25785 ns round trip
+syscall   getppid       100 ns
+clock     clock_gettime 33 ns
+udp_send  60B (rx full/dropping)  1661 ns per send
+udp_drain recv 222 queued dgrams  606 ns per recv
+udp_loop  send+recv same thread   2059 ns per pair
+pingpong cpu0<->cpu0  4277 ns round trip
+pingpong cpu0<->cpu1  25030 ns round trip
+syscall   getppid       91 ns
+clock     clock_gettime 32 ns
+udp_send  60B (rx full/dropping)  1605 ns per send
+udp_drain recv 222 queued dgrams  662 ns per recv
+udp_loop  send+recv same thread   2179 ns per pair
+pingpong cpu0<->cpu0  3678 ns round trip
+pingpong cpu0<->cpu1  25507 ns round trip

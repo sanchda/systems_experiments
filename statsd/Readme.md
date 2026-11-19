@@ -326,3 +326,11 @@ Measured costs: bare syscall ~860 ns, `send()` of 60 B ~2.9 us, `recv()` ~1.5 us
 * The 4 MiB `SO_RCVBUF` test could not be repeated (`rmem_max` caps it; the request only doubled the buffer to ~2.2 ms of slack, and loss only fell to 0.3-1.4%).
 
 **Not reproduced:** the queue-depth time series, `debug/who.c`, the 4-socket reuseport throughput comparison, and the `sysctl` experiment (no root). Non-blocking UDS flat-out runs with several clients are not meaningful on 2 CPUs.
+
+
+Re-run on an 8-vCPU KVM guest (AMD EPYC-Rome)
+---
+Same experiments on 8 non-SMT vCPUs (kernel 6.8.0-138, `rmem_max` 212992, `max_dgram_qlen` 512, non-root), using the original CPU layout (server on CPU 2, clients from CPU 4). Full tables and caveats: `results_8vcpu/REPORT.md`. Scripts: `run_all8.sh`, `run_rest8.sh`.
+
+* **Reproduced:** buffer capacity (222 / 93 / 13 datagrams), batching scaling (busy-poll: 1432 B ~10M/s and 8192 B ~20M/s at <=~0.1% loss), aggregation ratios, UDS `SO_REUSEPORT` EOPNOTSUPP, UDS 4-path scaling, the blocking-UDS multi-client slowdown (~0.18M/s vs ~0.9M/s with one client).
+* **Differed:** single-socket UDP capacity is ~1.0M/s delivered (Readme box: ~1.7M/s). The idle-server drops of section 3b did **not** appear: the blocking server lost <=0.06% at 250k/s in 5 trials, and `jitter` saw few >1 ms stalls and `debug/who.c` none.

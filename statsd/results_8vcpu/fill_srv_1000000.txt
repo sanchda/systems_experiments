@@ -1,0 +1,1 @@
+srv dgrams=1985484 bytes=119416376 metrics=0 calls=1985484 drops=1014516 secs=3.004 dgram_per_s=661021 rmem_peak=214080 rmem_mean=193875 t0_oncpu_ms=3000.2 t0_runq_wait_ms=0.36 t0_slices=16

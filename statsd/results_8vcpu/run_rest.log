@@ -1,0 +1,262 @@
+## poll_udp_1_discard  server[-P] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        250000     250000    0.000   250000       7.4     30720
+250000        250000     250000    0.000   250000       6.1     48000
+250000        250000     250000    0.000   250000       7.4     46080
+500000        500000     500000    0.000   500000      10.8    121920
+500000        500000     500000    0.000   500000      13.3     94080
+500000        500000     500000    0.000   500000      14.8     92160
+1000000      1000000     885854   11.415  1000000     262.1    214080
+1000000       999334     917434    8.195   999334     262.1    214080
+1000000       998004     868619   12.964   998004     278.5    214080
+1500000      1398384     900287   35.620  1398384     278.5    214080
+1500000      1295337    1027873   20.648  1295337     237.6    214080
+1500000      1400560    1198155   14.452  1400560     213.0    214080
+2000000      1453841    1034389   28.851  1453841     237.6    214080
+2000000      1325088    1014687   23.425  1325088     237.6    214080
+2000000      1422812    1077524   24.268  1422812     213.0    214080
+max          1706339     941075   44.848  1706339     278.5    214080
+max          1665418     981997   41.036  1665418     278.5    214080
+max          1636260     931176   43.091  1636260     278.5    214080
+## poll_udp_1432_count  server[-P -m] client[-b 1432 -c 3]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+5000000      5000000    5000000    0.000   217392      19.5    126720
+5000000      5000000    5000000    0.000   217392       6.9     59904
+5000000      5000000    4999072    0.019   217392      22.5    214272
+10000000    10000000    9989029    0.110   434783      27.6    214272
+10000000    10000000    9997202    0.028   434783      47.1    214272
+10000000    10000000    9987212    0.128   434783      18.4    214272
+20000000    19973369   18089775    9.431   868408     139.3    216576
+20000000    20000000   17031454   14.843   869566     155.6    216576
+20000000    20000000   17610072   11.950   869566     147.5    216576
+30000000    25153717   16078470   36.079  1093640     172.0    216576
+30000000    18975332   17856687    5.895   825015     131.1    216576
+30000000    24923844   16958393   31.959  1083646     155.6    216576
+max         22002198   16181497   26.455   956620     163.8    216576
+max         25380708   16717180   34.134  1103513     155.6    214272
+max         22857141   17079980   25.275   993792     147.5    216576
+## poll_udp_8192_count  server[-P -m] client[-b 8192 -c 3]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+10000000    10000000    9998323    0.017    73530       9.7    216320
+10000000    10000000   10000000    0.000    73530       7.7     83200
+10000000    10000000   10000000    0.000    73530      10.2    116480
+20000000    20000000   19999456    0.003   147059      12.8    216320
+20000000    20000000   19998640    0.007   147059      16.4    216320
+20000000    20000000   19997597    0.012   147059      15.9    216320
+40000000    40000000   39804568    0.489   294118      38.9    216320
+40000000    40000000   39659547    0.851   294118      41.0    216320
+40000000    40000000   39959517    0.101   294118      23.6    216320
+80000000    78999342   43043098   45.515   580878      69.6    232960
+80000000    76190476   44236775   41.939   560225      61.4    232960
+80000000    79628401   41388351   48.023   585504      65.5    232960
+max         84388177   41873889   50.379   620506      59.4    232960
+max         88495566   45267173   48.848   650708      55.3    216320
+max         86580078   49960461   42.296   636623      47.1    216320
+## poll_uds_1_nb  server[-P -u] client[-u -N -c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        250000     250000    0.000   250000      16.4         0
+250000        250000     250000    0.000   250000      23.6         0
+250000        250000     250000    0.000   250000      13.3         0
+500000        500000     500000    0.000   500000     278.5         0
+500000        500000     499985    0.003   499985     262.1         0
+500000        500000     499940    0.012   499940     245.8         0
+1000000      1000000     460549   53.945   460549    1507.3         0
+1000000      1000000     532564   46.744   532564    1376.3         0
+1000000      1000000     547796   45.220   547796    1441.8         0
+1500000      1500000     575833   61.611   575833    1114.1         0
+1500000      1500000     795581   46.961   795581    1048.6         0
+1500000      1500000    1077125   28.192  1077125     753.7         0
+max          1753156     585063   66.628   585063    1310.7         0
+max          1660854     551504   66.794   551504    1441.8         0
+max          1838235     673341   63.370   673341    1179.6         0
+## poll_uds_8192_nb  server[-P -u -m] client[-u -N -b 8192 -c 3]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+10000000    10000000   10000000    0.000    73530      11.8         0
+10000000    10000000   10000000    0.000    73530      10.2         0
+10000000    10000000   10000000    0.000    73530      15.4         0
+20000000    20000000   20000000    0.000   147059      21.5         0
+20000000    20000000   19997507    0.012   147041      29.7         0
+20000000    20000000   20000000    0.000   147059      29.7         0
+40000000    40000000   34654445   13.364   254812     204.8         0
+40000000    40000000   34519789   13.701   253822     204.8         0
+40000000    40000000   33768632   15.578   248299     213.0         0
+80000000    80000000   35895763   55.130   263940     196.6         0
+80000000    80000000   42262240   47.172   310752     163.8         0
+80000000    80000000   34170784   57.287   251256     204.8         0
+max        107526871   29005441   73.025   213280     188.4         0
+max        157480299   37830063   75.978   278165     155.6         0
+max        127388522   30892968   75.749   227159     188.4         0
+## udp_1_reuse4_hash  server[-R 4 -C 0] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+1000000       998004     997725    0.028   998004      81.9    213120
+1000000      1000000     996316    0.368  1000000     245.8    213120
+1000000       987817     987798    0.002   987817      38.9    213120
+1500000      1166105    1165866    0.021  1166105      77.8    213120
+1500000      1309281     988253   24.519  1309281     254.0    214080
+1500000      1095690    1091364    0.395  1095690     172.0    213120
+2000000      1426194    1407886    1.284  1426194     229.4    213120
+2000000      1139168    1134225    0.434  1139168     229.4    213120
+2000000      1253656    1239811    1.104  1253656     237.6    213120
+max          1282133    1279327    0.219  1282133     188.4    214080
+max          1348072    1219402    9.545  1348072     196.6    214080
+max          1327669    1105818   16.710  1327669     278.5    214080
+## udp_1_reuse4_cbpf  server[-R 4 -B -C 0] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+1000000       932836     932191    0.069   932836      30.7    213120
+1000000       987817     986334    0.150   987817      27.6    213120
+1000000       950570     950176    0.042   950570      29.7    213120
+1500000      1100783    1100014    0.070  1100783      26.6    213120
+1500000      1217862    1215723    0.176  1217862      26.6    213120
+1500000      1105380    1104345    0.094  1105380      34.8    213120
+2000000      1227496    1224607    0.235  1227496      31.7    213120
+2000000      1104159    1103854    0.028  1104159      27.6    213120
+2000000      1123385    1121689    0.151  1123385      27.6    213120
+max          1190334    1187731    0.219  1190334      32.8    213120
+max          1246494    1244916    0.127  1246494      36.9    213120
+max          1254154    1252089    0.165  1254154      29.7    213120
+## uds_1_nb_path4  server[-u -R 4 -C 0] client[-u -N -c 4 -P 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+500000        500000     499970    0.006   499970      34.8         0
+500000        500000     499774    0.045   499774      36.9         0
+500000        500000     499760    0.048   499760      36.9         0
+1000000      1000000    1000000    0.000  1000000      28.7         0
+1000000      1000000     998680    0.132   998680      34.8         0
+1000000      1000000     999459    0.054   999459      34.8         0
+1500000      1500000    1499488    0.034  1499488      51.2         0
+1500000      1500000    1495070    0.329  1495070      65.5         0
+1500000      1500000    1498924    0.072  1498924      63.5         0
+max          4961548    3020185   39.128  3020185     524.3         0
+max          4360148    2600732   40.352  2600732     507.9         0
+max          3327787    1963083   41.009  1963083     524.3         0
+## uds_1_nb_thr4  server[-u -T 4 -C 0] client[-u -N -c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+500000        500000     500000    0.000   500000     294.9         0
+500000        500000     500000    0.000   500000     278.5         0
+500000        500000     497286    0.543   497286    1179.6         0
+1000000      1000000     412524   58.748   412524    1572.9         0
+1000000      1000000     460075   53.992   460075    1376.3         0
+1000000      1000000     492662   50.734   492662    1245.2         0
+1500000      1500000     759528   49.365   759528     884.7         0
+1500000      1351351     427271   68.382   427271    1441.8         0
+1500000      1267249     392717   69.010   392717    1638.4         0
+max          1296512     406889   68.617   406889    1572.9         0
+max          1655766     378137   77.162   378137    1638.4         0
+max          1613814     394994   75.524   394994    1572.9         0
+## uds_1_block_path4  server[-u -R 4 -C 0] client[-u -c 4 -P 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+max          3053901    3053901    0.000  3053901     360.4         0
+max          3101256    3101256    0.000  3101256     376.8         0
+max          2942475    2942475    0.000  2942475     376.8         0
+## 3b_baseline_block  server[] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        250000     249929    0.028   250000      29.7    213120
+250000        250000     249870    0.052   250000      28.7    213120
+250000        250000     249994    0.002   250000      32.8    213120
+250000        250000     249968    0.013   250000      38.9    213120
+250000        250000     249897    0.041   250000      29.7    213120
+## 3b_one_client  server[] client[-c 1]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        249584     249584    0.000   249584      20.5     57600
+250000        250000     250000    0.000   250000      22.5    209280
+250000        250000     250000    0.000   250000      21.5     79680
+250000        247934     247934    0.000   247934      20.5    119040
+250000        250000     250000    0.000   250000      24.6    202560
+## 3b_rcvbuf_4MiB  server[-s 4194304] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        250000     250000    0.000   250000      31.7    278400
+250000        250000     250000    0.000   250000      30.7    383040
+250000        250000     250000    0.000   250000      30.7    213120
+250000        250000     250000    0.000   250000      30.7     96000
+250000        250000     250000    0.000   250000      29.7    180480
+## 3b_busypoll  server[-P] client[-c 4]
+target        sent/s    deliv/s    drop%     dg/s    p99_us   rmem_pk
+250000        250000     250000    0.000   250000       8.2     41280
+250000        250000     250000    0.000   250000      12.3    151680
+250000        250000     250000    0.000   250000      10.8     84480
+250000        250000     250000    0.000   250000       7.4     35520
+250000        250000     250000    0.000   250000       9.7     32640
+== udp 60B
+cli metrics=20000 dgrams=20000 eagain_metrics=0 secs=0.051 metric_per_s=392296 dgram_per_s=392296 avg_line=60.1
+srv dgrams=222 bytes=13347 metrics=222 calls=222 drops=19778 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.6 t0_runq_wait_ms=0.11 t0_slices=7
+== udp 1432B
+cli metrics=20000 dgrams=870 eagain_metrics=0 secs=0.002 metric_per_s=10905185 dgram_per_s=474376 avg_line=60.1
+srv dgrams=93 bytes=128651 metrics=2139 calls=93 drops=777 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.6 t0_runq_wait_ms=0.07 t0_slices=7
+== udp 8192B
+cli metrics=20000 dgrams=148 eagain_metrics=0 secs=0.001 metric_per_s=24580412 dgram_per_s=181895 avg_line=60.1
+srv dgrams=13 bytes=106332 metrics=1768 calls=13 drops=135 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.03 t0_slices=7
+== uds 60B
+cli metrics=278 dgrams=278 eagain_metrics=19722 secs=0.006 metric_per_s=43523 dgram_per_s=43523 avg_line=60.1
+srv dgrams=278 bytes=16721 metrics=278 calls=278 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.7 t0_runq_wait_ms=0.02 t0_slices=6
+== uds 1432B
+cli metrics=2139 dgrams=93 eagain_metrics=17861 secs=0.000 metric_per_s=4960115 dgram_per_s=215657 avg_line=60.1
+srv dgrams=93 bytes=128651 metrics=2139 calls=93 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.01 t0_slices=7
+== uds 8192B
+cli metrics=1768 dgrams=13 eagain_metrics=18232 secs=0.000 metric_per_s=5478518 dgram_per_s=40283 avg_line=60.1
+srv dgrams=13 bytes=106332 metrics=1768 calls=13 drops=0 secs=0.000 dgram_per_s=0 metric_per_s=0 t0_oncpu_ms=0.4 t0_runq_wait_ms=0.01 t0_slices=6
+# spin cpu2
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=403 p99=106us max=268us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.71 ms, involuntary csw 16
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=946 p99=344us max=718us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.62 ms, involuntary csw 18
+spin  cpu=2 load=0 secs=5 events(>20us gap or any wake)=1205 p99=106us max=608us  >1ms: 0 events, 0.0 ms total | guest view: cpu/wall 100.0%, runq wait 0.53 ms, involuntary csw 17
+# sleep cpu2, no load
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=28688 p99=106us max=1699us  >1ms: 5 events, 7.1 ms total
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=28817 p99=106us max=5782us  >1ms: 4 events, 12.7 ms total
+sleep cpu=2 load=0 secs=5 events(>20us gap or any wake)=29131 p99=102us max=1759us  >1ms: 3 events, 4.4 ms total
+# sleep cpu2, 4 spinners
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=29052 p99=102us max=2257us  >1ms: 2 events, 3.3 ms total
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=28990 p99=102us max=2710us  >1ms: 4 events, 8.3 ms total
+sleep cpu=2 load=4 secs=5 events(>20us gap or any wake)=28835 p99=106us max=950us  >1ms: 0 events, 0.0 ms total
+## H=16
+lines=10000000 avg_line=71.9 flush_every=100000 contexts<=768
+parse   64.7 ns/line
+raw    230.0 ns/line  count+gauge lines 74979 -> 13762 per flush (5.4x)  total out 38.8% of in
+sort   212.6 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+sum    144.6 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+lines=10000000 avg_line=71.9 flush_every=100000 contexts<=768
+parse   66.1 ns/line
+raw    180.9 ns/line  count+gauge lines 74979 -> 13762 per flush (5.4x)  total out 38.8% of in
+sort   191.1 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+sum    153.7 ns/line  count+gauge lines 74979 -> 576 per flush (130.2x)  total out 25.6% of in
+## H=256
+lines=10000000 avg_line=72.5 flush_every=100000 contexts<=12288
+parse   64.3 ns/line
+raw    237.9 ns/line  count+gauge lines 74979 -> 63594 per flush (1.2x)  total out 88.6% of in
+sort   254.5 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+sum    180.1 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+lines=10000000 avg_line=72.5 flush_every=100000 contexts<=12288
+parse   80.5 ns/line
+raw    217.7 ns/line  count+gauge lines 74979 -> 63594 per flush (1.2x)  total out 88.6% of in
+sort   188.5 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+sum    131.7 ns/line  count+gauge lines 74979 -> 9213 per flush (8.1x)  total out 34.2% of in
+## H=4096
+lines=10000000 avg_line=73.6 flush_every=100000 contexts<=196608
+parse   63.2 ns/line
+raw    205.4 ns/line  count+gauge lines 74979 -> 71890 per flush (1.0x)  total out 96.9% of in
+sort   238.7 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+sum    149.1 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+lines=10000000 avg_line=73.6 flush_every=100000 contexts<=196608
+parse   62.4 ns/line
+raw    208.3 ns/line  count+gauge lines 74979 -> 71890 per flush (1.0x)  total out 96.9% of in
+sort   233.3 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+sum    172.4 ns/line  count+gauge lines 74979 -> 32040 per flush (2.3x)  total out 57.1% of in
+syscall   getppid       93 ns
+clock     clock_gettime 32 ns
+udp_send  60B (rx full/dropping)  1545 ns per send
+udp_drain recv 222 queued dgrams  671 ns per recv
+udp_loop  send+recv same thread   1932 ns per pair
+pingpong cpu0<->cpu0  4478 ns round trip
+pingpong cpu0<->cpu1  25785 ns round trip
+syscall   getppid       100 ns
+clock     clock_gettime 33 ns
+udp_send  60B (rx full/dropping)  1661 ns per send
+udp_drain recv 222 queued dgrams  606 ns per recv
+udp_loop  send+recv same thread   2059 ns per pair
+pingpong cpu0<->cpu0  4277 ns round trip
+pingpong cpu0<->cpu1  25030 ns round trip
+syscall   getppid       91 ns
+clock     clock_gettime 32 ns
+udp_send  60B (rx full/dropping)  1605 ns per send
+udp_drain recv 222 queued dgrams  662 ns per recv
+udp_loop  send+recv same thread   2179 ns per pair
+pingpong cpu0<->cpu0  3678 ns round trip
+pingpong cpu0<->cpu1  25507 ns round trip
+ALLDONE
