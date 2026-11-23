@@ -1,5 +1,6 @@
 BEGIN {
   printf("Dumping recvfrom data... Hit Ctrl-C to end.\n");
+  $needle = "ABDEFGHIJKLMNOPQ";
 }
 
 tracepoint:syscalls:sys_enter_recvfrom {
@@ -15,8 +16,8 @@ tracepoint:syscalls:sys_exit_recvfrom /@starttime[tid]/ {
   $elapsed_us = (nsecs - @starttime[tid]) / 1000;
 
   if ($ret > 0) {
-    $data = str(@buf[tid]);
-    printf("%dus [%d:%d(%s)] %d = recvfrom(%d, %d, %d):%s\n",
+    $data = buf(@buf[tid], $ret);
+    printf("%dus [%d:%d(%s)] %d = recvfrom(%d, %d, %d):%r\n",
              $elapsed_us,
              pid,
              tid,
